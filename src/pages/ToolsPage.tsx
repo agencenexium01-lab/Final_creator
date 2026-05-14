@@ -1,11 +1,10 @@
-
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Zap, PenTool, Lightbulb, Calendar as CalendarIcon, 
   Loader2, Copy, Check, RefreshCw, Download, 
-  ChevronRight, ArrowLeft, Star
+  ChevronRight, ArrowLeft, Star, AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,11 +12,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Toggle } from '@/components/ui/toggle';
 import Sidebar from '@/components/layout/Sidebar';
 import { useAppStore } from '@/stores/appStore';
 import { geminiService } from '@/services/geminiService';
+import { creditService } from '@/services/creditService';
+import { authService } from '@/services/authService';
 import { NICHES } from '@/config/constants';
 import toast from 'react-hot-toast';
 import { jsPDF } from 'jspdf';
@@ -26,21 +25,34 @@ import html2canvas from 'html2canvas';
 export default function ToolsPage() {
   const { toolId } = useParams<{ toolId: string }>();
   const navigate = useNavigate();
-  const { user } = useAppStore();
+  const { user, updateProfile } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState({
-    niche: user?.niche || '',
-    platform: user?.platform || 'both',
+  const creditCost = creditService.getCost(toolId as any);
+
+  const [formData, setFormData] = useState<{
+    niche: string;
+    platform: string;
+    topic: string;
+    tone: string;
+    hook: string;
+    message: string;
+    goal: string;
+    duration: string;
+    angles: string[];
+    intensity: string;
+  }>({
+    niche: (user?.niche ?? '') as string,
+    platform: (user?.platform ?? 'both') as string,
     topic: '',
     tone: 'Motivationnel',
     hook: '',
     message: '',
     goal: 'Inspirer et motiver',
     duration: '60 sec',
-    angles: [] as string[],
+    angles: [],
     intensity: '1 contenu/jour',
   });
 
@@ -48,19 +60,67 @@ export default function ToolsPage() {
     setResults(null);
   }, [toolId]);
 
+  // --- MODIFIED HANDLE GENERATE WITH CREDITS CHECK ---
   const handleGenerate = async () => {
+    if (isLoading) return;
+
+    // Check credits
+    const hasCredits = creditService.hasEnoughCredits(user?.credits || 0, toolId as any);
+    if (!hasCredits) {
+      toast.error(`Crédits insuffisants. Vous avez besoin de ${creditCost} crédit(s).`, {
+        duration: 5000,
+      });
+      
+      // Show go to recharge button
+      setTimeout(() => {
+        toast((t) => (
+          <div>
+            <p className="mb-3">Allez recharger vos crédits</p>
+            <Button
+              onClick={() => {
+                navigate('/recharge-credits');
+                toast.dismiss(t.id);
+              }}
+              className="w-full bg-[#7C3AED] hover:bg-[#6D28D9] text-white"
+              size="sm"
+            >
+              Recharger
+            </Button>
+          </div>
+        ), {
+          duration: 8000,
+        });
+      }, 100);
+      return;
+    }
+    
     setIsLoading(true);
     try {
       const data = await geminiService.generateContent(toolId as any, formData);
       setResults(data);
-      toast.success("Génération terminée !");
-    } catch (error) {
-      console.error(error);
-      toast.error("Une erreur est survenue lors de la génération.");
+
+      // Deduct credits after successful generation
+      const updatedUser = await authService.addCredits(-creditCost);
+      updateProfile({ credits: updatedUser.credits });
+      
+      toast.success(`Génération terminée! ${creditCost} crédit(s) déduit(s).`);
+    } catch (error: any) {
+      console.error("Gemini Error:", error);
+
+      if (error.message?.includes('429') || error.message?.includes('prepayment')) {
+        toast.error("Quota épuisé ou crédit insuffisant sur Google Cloud.", {
+          duration: 5000,
+        });
+      } else if (error.message?.includes('API Key')) {
+        toast.error("Clé API manquante ou invalide.");
+      } else {
+        toast.error("Une erreur est survenue lors de la génération.");
+      }
     } finally {
       setIsLoading(false);
     }
   };
+  // --------------------------------
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -102,7 +162,7 @@ export default function ToolsPage() {
     <div className="flex min-h-screen bg-[#0A0A14]">
       <Sidebar />
       
-      <main className="flex-1 p-4 md:p-8 overflow-y-auto">
+      <main className="flex-1 p-4 md:p-8 overflow-y-auto text-white">
         <div className="max-w-5xl mx-auto space-y-8">
           {/* Header */}
           <div className="flex items-center gap-4">
@@ -125,8 +185,8 @@ export default function ToolsPage() {
                 <CardContent className="p-6 space-y-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-[#94A3B8] uppercase">Niche</label>
-                    <Select value={formData.niche} onValueChange={(v) => setFormData({ ...formData, niche: v })}>
-                      <SelectTrigger className="bg-[#1A1A2E] border-[#2D2D5E]">
+                    <Select value={formData.niche} onValueChange={(v: string | null) => setFormData({ ...formData, niche: v ?? '' })}>
+                      <SelectTrigger className="bg-[#1A1A2E] border-[#2D2D5E] text-white">
                         <SelectValue placeholder="Choisir une niche" />
                       </SelectTrigger>
                       <SelectContent className="bg-[#12121F] border-[#1E1E3A] text-white">
@@ -144,7 +204,7 @@ export default function ToolsPage() {
                           variant={formData.platform === p ? 'default' : 'outline'}
                           onClick={() => setFormData({ ...formData, platform: p as any })}
                           className={`flex-1 h-10 rounded-lg capitalize ${
-                            formData.platform === p ? 'bg-[#7C3AED] hover:bg-[#7C3AED]/90' : 'border-[#2D2D5E] hover:bg-[#1E1E3A]'
+                            formData.platform === p ? 'bg-[#7C3AED] hover:bg-[#7C3AED]/90' : 'border-[#2D2D5E] hover:bg-[#1E1E3A] text-white'
                           }`}
                         >
                           {p === 'both' ? 'Les deux' : p}
@@ -156,18 +216,18 @@ export default function ToolsPage() {
                   {toolId === 'hooks' && (
                     <>
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-[#94A3B8] uppercase">Sujet spécifique (Optionnel)</label>
+                        <label className="text-xs font-bold text-[#94A3B8] uppercase">Sujet spécifique</label>
                         <Textarea 
                           value={formData.topic}
                           onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
                           placeholder="Ex: comment j'ai gagné mon premier client..."
-                          className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[80px]"
+                          className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[80px] text-white"
                         />
                       </div>
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-[#94A3B8] uppercase">Ton</label>
-                        <Select value={formData.tone} onValueChange={(v) => setFormData({ ...formData, tone: v })}>
-                          <SelectTrigger className="bg-[#1A1A2E] border-[#2D2D5E]">
+                        <Select value={formData.tone} onValueChange={(v: string | null) => setFormData({ ...formData, tone: v ?? 'Motivationnel' })}>
+                          <SelectTrigger className="bg-[#1A1A2E] border-[#2D2D5E] text-white">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="bg-[#12121F] border-[#1E1E3A] text-white">
@@ -187,8 +247,8 @@ export default function ToolsPage() {
                         <Textarea 
                           value={formData.hook}
                           onChange={(e) => setFormData({ ...formData, hook: e.target.value })}
-                          placeholder="Copie un hook ici ou laisse vide pour en générer un..."
-                          className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[80px]"
+                          placeholder="Copie un hook ici ou laisse vide..."
+                          className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[80px] text-white"
                         />
                       </div>
                       <div className="space-y-2">
@@ -197,32 +257,35 @@ export default function ToolsPage() {
                           value={formData.message}
                           onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                           placeholder="Ce que tu veux transmettre..."
-                          className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[80px]"
+                          className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[80px] text-white"
                         />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-[#94A3B8] uppercase">Objectif</label>
-                        <Select value={formData.goal} onValueChange={(v) => setFormData({ ...formData, goal: v })}>
-                          <SelectTrigger className="bg-[#1A1A2E] border-[#2D2D5E]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-[#12121F] border-[#1E1E3A] text-white">
-                            {['Enseigner', 'Inspirer', 'Storytelling', 'Leçon apprise', 'Vendre'].map(g => (
-                              <SelectItem key={g} value={g}>{g}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
                       </div>
                     </>
                   )}
 
+                  {/* Credits Info */}
+                  <div className="p-4 bg-[#1A1A2E] border border-[#2D2D5E] rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-bold text-[#94A3B8] uppercase">Coût de génération</p>
+                      <Badge variant="outline" className="bg-[#7C3AED]/20 border-[#7C3AED] text-[#7C3AED]">
+                        {creditCost} crédit{creditCost > 1 ? 's' : ''}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-[#94A3B8]">Votre solde</p>
+                      <p className="text-lg font-bold text-[#06B6D4]">{user?.credits || 0}</p>
+                    </div>
+                  </div>
+
                   <Button 
                     onClick={handleGenerate} 
-                    disabled={isLoading}
-                    className="w-full bg-gradient-to-r from-[#7C3AED] to-[#06B6D4] hover:opacity-90 text-white border-none h-12 rounded-xl mt-4"
+                    disabled={isLoading || !creditService.hasEnoughCredits(user?.credits || 0, toolId as any)}
+                    className="w-full bg-gradient-to-r from-[#7C3AED] to-[#06B6D4] hover:opacity-90 text-white border-none h-12 rounded-xl mt-4 disabled:opacity-50"
                   >
                     {isLoading ? (
                       <><Loader2 className="w-5 h-5 animate-spin mr-2" /> Génération...</>
+                    ) : !creditService.hasEnoughCredits(user?.credits || 0, toolId as any) ? (
+                      <><AlertCircle className="w-5 h-5 mr-2" /> Crédits insuffisants</>
                     ) : (
                       <><Zap className="w-5 h-5 mr-2 fill-current" /> Générer ⚡</>
                     )}
@@ -274,6 +337,7 @@ export default function ToolsPage() {
                     animate={{ opacity: 1, y: 0 }}
                     className="space-y-6"
                   >
+                    {/* Render Hooks */}
                     {toolId === 'hooks' && results.hooks?.map((hook: any, i: number) => (
                       <Card key={i} className="bg-[#12121F] border-[#1E1E3A] hover:border-[#7C3AED]/30 transition-all">
                         <CardContent className="p-6">
@@ -293,7 +357,7 @@ export default function ToolsPage() {
                             variant="outline" 
                             size="sm" 
                             onClick={() => copyToClipboard(hook.hook, `hook-${i}`)}
-                            className="bg-[#1A1A2E] border-[#2D2D5E] hover:bg-[#1E1E3A]"
+                            className="bg-[#1A1A2E] border-[#2D2D5E] hover:bg-[#1E1E3A] text-white"
                           >
                             {copiedId === `hook-${i}` ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
                             Copier
@@ -302,98 +366,28 @@ export default function ToolsPage() {
                       </Card>
                     ))}
 
+                    {/* Render Scripts */}
                     {toolId === 'script' && (
                       <Card className="bg-[#12121F] border-[#1E1E3A]">
                         <CardHeader className="border-b border-[#1E1E3A]">
                           <div className="flex items-center justify-between">
-                            <CardTitle>Script {results.platform}</CardTitle>
-                            <Badge className="bg-[#06B6D4]">{results.duration_estimate || results.reading_time}</Badge>
+                            <CardTitle className="text-white">Script {results.platform}</CardTitle>
                           </div>
                         </CardHeader>
                         <CardContent className="p-6 space-y-6">
                           {results.sections?.map((section: any) => (
                             <div key={section.id} className="space-y-2">
-                              <div className="flex items-center justify-between">
-                                <h4 className="text-xs font-bold text-[#7C3AED] uppercase tracking-widest">{section.label} {section.duration && `(${section.duration})`}</h4>
-                                <Button variant="ghost" size="icon" onClick={() => copyToClipboard(section.content, section.id)} className="h-6 w-6">
-                                  <Copy className="w-3 h-3" />
-                                </Button>
-                              </div>
+                              <h4 className="text-xs font-bold text-[#7C3AED] uppercase tracking-widest">{section.label}</h4>
                               <div className="p-4 rounded-xl bg-[#1A1A2E] border border-[#2D2D5E]">
-                                <p className="whitespace-pre-wrap leading-relaxed">{section.content}</p>
+                                <p className="whitespace-pre-wrap leading-relaxed text-white">{section.content}</p>
                                 {section.visual_note && (
-                                  <p className="mt-3 text-xs text-[#06B6D4] italic">Note visuelle: {section.visual_note}</p>
+                                  <p className="mt-3 text-xs text-[#06B6D4] italic">Note: {section.visual_note}</p>
                                 )}
                               </div>
                             </div>
                           ))}
-                          <Button 
-                            className="w-full bg-[#7C3AED] hover:bg-[#7C3AED]/90"
-                            onClick={() => copyToClipboard(results.sections?.map((s: any) => `${s.label}:\n${s.content}`).join('\n\n') || '', 'full-script')}
-                          >
-                            Copier le script complet
-                          </Button>
                         </CardContent>
                       </Card>
-                    )}
-
-                    {toolId === 'ideas' && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {results.ideas?.map((idea: any, i: number) => (
-                          <Card key={i} className="bg-[#12121F] border-[#1E1E3A] hover:border-[#F59E0B]/30 transition-all">
-                            <CardContent className="p-6">
-                              <div className="flex justify-between mb-3">
-                                <Badge className="bg-[#F59E0B]/10 text-[#F59E0B] border-none">{idea.format}</Badge>
-                                <Badge variant="outline" className="border-[#1E1E3A] text-[#94A3B8]">{idea.platform}</Badge>
-                              </div>
-                              <h4 className="font-bold mb-2">{idea.title}</h4>
-                              <p className="text-sm text-[#94A3B8] mb-4">{idea.description}</p>
-                              <Button variant="ghost" size="sm" onClick={() => copyToClipboard(idea.title + '\n' + idea.description, `idea-${i}`)} className="text-[#7C3AED] p-0 h-auto">
-                                Copier l'idée
-                              </Button>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-
-                    {toolId === 'calendar' && (
-                      <div id="calendar-results" className="space-y-6">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-xl font-bold">Calendrier 30 Jours</h3>
-                          <Button onClick={exportToPDF} variant="outline" className="border-[#1E1E3A] bg-[#12121F]">
-                            <Download className="w-4 h-4 mr-2" /> PDF
-                          </Button>
-                        </div>
-                        <div className="space-y-8">
-                          {[1, 2, 3, 4].map(weekNum => (
-                            <div key={weekNum} className="space-y-4">
-                              <h4 className="text-[#7C3AED] font-bold uppercase text-xs tracking-widest">Semaine {weekNum}</h4>
-                              <div className="grid grid-cols-1 gap-3">
-                                {results.calendar?.filter((d: any) => d.week === weekNum).map((day: any) => (
-                                  <div key={day.day} className="flex items-start gap-4 p-4 rounded-xl bg-[#12121F] border border-[#1E1E3A]">
-                                    <div className="w-10 h-10 rounded-lg bg-[#1E1E3A] flex flex-col items-center justify-center flex-shrink-0">
-                                      <span className="text-[10px] text-[#94A3B8] uppercase">Jour</span>
-                                      <span className="font-bold leading-none">{day.day}</span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <Badge variant="outline" className="text-[10px] h-4 border-[#2D2D5E]">{day.format}</Badge>
-                                        <Badge variant="outline" className="text-[10px] h-4 border-[#2D2D5E]">{day.platform}</Badge>
-                                      </div>
-                                      <h5 className="font-bold text-sm mb-1">{day.idea}</h5>
-                                      <p className="text-xs text-[#94A3B8] italic">Hook: {day.hook}</p>
-                                    </div>
-                                    <Button variant="ghost" size="icon" onClick={() => copyToClipboard(`${day.idea}\nHook: ${day.hook}`, `day-${day.day}`)} className="h-8 w-8">
-                                      <Copy className="w-3 h-3" />
-                                    </Button>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
                     )}
                   </motion.div>
                 )}

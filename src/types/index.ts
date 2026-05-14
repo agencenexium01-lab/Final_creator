@@ -8,6 +8,7 @@ export interface UserProfile {
   email: string;
   niche?: string;
   platform: Platform;
+  credits?: number;
   onboarding_completed: boolean;
   created_at: string;
 }

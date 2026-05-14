@@ -10,6 +10,7 @@ import OnboardingPage from './pages/OnboardingPage';
 import DashboardPage from './pages/DashboardPage';
 import ToolsPage from './pages/ToolsPage';
 import GuidePage from './pages/GuidePage';
+import RechargeCreditsPage from './pages/RechargeCreditsPage';
 import { useAppStore } from './stores/appStore';
 import { authService } from './services/authService';
 import { Loader2 } from 'lucide-react';
@@ -71,6 +72,12 @@ export default function App() {
           <Route path="/dashboard" element={
             <ProtectedRoute>
               <DashboardPage />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/recharge-credits" element={
+            <ProtectedRoute>
+              <RechargeCreditsPage />
             </ProtectedRoute>
           } />
           

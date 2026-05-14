@@ -31,6 +31,7 @@ const buildUserProfile = async (firebaseUser: any, name: string): Promise<UserPr
     name,
     email: firebaseUser.email || '',
     platform: 'both',
+    credits: 0,
     onboarding_completed: false,
     created_at: new Date().toISOString(),
   };
@@ -68,8 +69,31 @@ export const authService = {
   
   updateProfile: async (updates: Partial<UserProfile>): Promise<UserProfile> => {
     if (!auth.currentUser) throw new Error("Non authentifié");
+    if (Object.keys(updates).length === 0) {
+      const userRef = doc(db, 'profiles', auth.currentUser.uid);
+      const updatedDoc = await getDoc(userRef);
+      return updatedDoc.data() as UserProfile;
+    }
     const userRef = doc(db, 'profiles', auth.currentUser.uid);
     await updateDoc(userRef, updates);
+    const updatedDoc = await getDoc(userRef);
+    return updatedDoc.data() as UserProfile;
+  },
+
+  getProfile: async (): Promise<UserProfile | null> => {
+    if (!auth.currentUser) return null;
+    const userRef = doc(db, 'profiles', auth.currentUser.uid);
+    const userDoc = await getDoc(userRef);
+    return userDoc.exists() ? (userDoc.data() as UserProfile) : null;
+  },
+
+  addCredits: async (amount: number): Promise<UserProfile> => {
+    if (!auth.currentUser) throw new Error("Non authentifié");
+    const userRef = doc(db, 'profiles', auth.currentUser.uid);
+    const currentDoc = await getDoc(userRef);
+    const currentData = currentDoc.exists() ? (currentDoc.data() as UserProfile) : { credits: 0 } as UserProfile;
+    const newCredits = (currentData.credits || 0) + amount;
+    await updateDoc(userRef, { credits: newCredits });
     const updatedDoc = await getDoc(userRef);
     return updatedDoc.data() as UserProfile;
   },

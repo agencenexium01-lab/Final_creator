@@ -1,28 +1,98 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Link } from 'react-router-dom';
-import { Sparkles, TrendingUp, PenTool, Lightbulb, Calendar, ArrowRight, Clock, Loader2 } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Sparkles, TrendingUp, PenTool, Lightbulb, Calendar, ArrowRight, Clock, Loader2, Zap, CheckCircle, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Sidebar from '@/components/layout/Sidebar';
 import { useAppStore } from '@/stores/appStore';
+import { authService } from '@/services/authService';
 import { DAILY_INSPIRATIONS, NICHES, PLATFORMS } from '@/config/constants';
 import { geminiService } from '@/services/geminiService';
+import toast from 'react-hot-toast';
 
 export default function DashboardPage() {
-  const { user } = useAppStore();
+  const [searchParams] = useSearchParams();
+  const { user, updateProfile } = useAppStore();
   const [history, setHistory] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
-  const inspiration = DAILY_INSPIRATIONS[new Date().getDate() % DAILY_INSPIRATIONS.length];
+  const [monthlyCount, setMonthlyCount] = useState(0);
+  const [inspiration, setInspiration] = useState(DAILY_INSPIRATIONS[0]);
+  const [paymentStatus, setPaymentStatus] = useState<'success' | 'pending' | 'failed' | null>(null);
+  const [paymentMessage, setPaymentMessage] = useState('');
+
+  const getEncouragementMessage = (count: number) => {
+    if (count === 0) return "Premier pas ! Lance-toi dès maintenant 🚀";
+    if (count === 1) return "Tu as commencé ! Continue sur cette lancée 🔥";
+    if (count < 10) return `${count}/30 - Belle dynamique, continue ! 💪`;
+    if (count < 20) return `${count}/30 - Tu es dans le rythme ! 🎯`;
+    if (count < 30) return `${count}/30 - Presque là, ne lâche rien ! ⚡`;
+    return "🎉 Objectif accompli pour le mois ! Félicitations !";
+  };
   
   useEffect(() => {
+    // Check for successful payment
+    const sessionId = searchParams.get('session_id');
+    if (sessionId) {
+      verifyPayment(sessionId);
+    }
+  }, [searchParams]);
+
+  const verifyPayment = async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/verify-payment/${sessionId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setPaymentStatus('success');
+          setPaymentMessage(`✨ ${data.credits} crédits ont été ajoutés à votre compte!`);
+          
+          const updatedUser = await authService.getProfile();
+          if (updatedUser) {
+            updateProfile({ credits: updatedUser.credits });
+          }
+          
+          toast.success(data.message);
+          
+          // Clear URL params
+          setTimeout(() => {
+            window.history.replaceState({}, document.title, '/dashboard');
+          }, 3000);
+        }
+      }
+    } catch (error) {
+      console.error('Payment verification error:', error);
+      setPaymentStatus('failed');
+      setPaymentMessage('Erreur lors de la vérification du paiement.');
+    }
+  };
+  
+  useEffect(() => {
+    // Random inspiration at each login
+    const randomInspiration = DAILY_INSPIRATIONS[Math.floor(Math.random() * DAILY_INSPIRATIONS.length)];
+    setInspiration(randomInspiration);
+    
     const fetchHistory = async () => {
       try {
         const data = await geminiService.getHistory(5);
         setHistory(data);
+        
+        // Count generations from current month
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+        
+        const monthlyGenerations = data.filter(item => {
+          const itemDate = new Date((item as any).created_at);
+          return itemDate.getMonth() === currentMonth && itemDate.getFullYear() === currentYear;
+        });
+        
+        // Count all generations from current month (not just from history)
+        const allGenerations = await geminiService.getMonthlyCount(currentMonth, currentYear);
+        setMonthlyCount(allGenerations);
       } catch (error) {
         console.error("Failed to fetch history:", error);
       } finally {
@@ -42,10 +112,8 @@ export default function DashboardPage() {
     { id: 'calendar', title: 'Calendrier 30 Jours', desc: 'Ton plan d\'action complet pour le mois.', icon: Calendar, color: '#10B981' },
   ];
 
-  const progressValue = 40; // Mock value
-  const progressText = progressValue < 25 ? "C'est le moment de démarrer 🚀" : 
-                       progressValue < 50 ? "Belle dynamique, continue ! 💪" :
-                       progressValue < 80 ? "Tu es dans le rythme ! 🔥" : "Presque là, ne lâche rien ! ⚡";
+  const progressValue = Math.min((monthlyCount / 30) * 100, 100);
+  const progressText = getEncouragementMessage(monthlyCount);
 
   const getToolLabel = (id: string) => {
     return tools.find(t => t.id === id)?.title || id;
@@ -73,6 +141,35 @@ export default function DashboardPage() {
             </div>
           </header>
 
+          {/* Payment Status Alert */}
+          {paymentStatus === 'success' && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-4 bg-[#10B981]/20 border border-[#10B981] rounded-lg flex items-start gap-3"
+            >
+              <CheckCircle className="w-5 h-5 text-[#10B981] flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-bold text-[#10B981]">Paiement réussi!</h4>
+                <p className="text-sm text-[#10B981]/80">{paymentMessage}</p>
+              </div>
+            </motion.div>
+          )}
+
+          {paymentStatus === 'failed' && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-4 bg-[#EF4444]/20 border border-[#EF4444] rounded-lg flex items-start gap-3"
+            >
+              <AlertCircle className="w-5 h-5 text-[#EF4444] flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-bold text-[#EF4444]">Erreur de paiement</h4>
+                <p className="text-sm text-[#EF4444]/80">{paymentMessage}</p>
+              </div>
+            </motion.div>
+          )}
+
           {/* Inspiration Card */}
           <Card className="bg-gradient-to-r from-[#7C3AED]/20 via-[#4F46E5]/10 to-[#06B6D4]/20 border-[#7C3AED]/30 overflow-hidden relative">
             <div className="absolute top-0 right-0 p-4 opacity-10">
@@ -96,6 +193,26 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
+          {/* Credits Card */}
+          <Card className="bg-gradient-to-r from-[#06B6D4]/20 to-[#10B981]/20 border-[#06B6D4]/30 overflow-hidden">
+            <CardContent className="p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-[#06B6D4]/20 flex items-center justify-center">
+                  <Zap className="w-6 h-6 text-[#06B6D4]" />
+                </div>
+                <div>
+                  <p className="text-sm text-[#94A3B8]">Crédits disponibles</p>
+                  <p className="text-3xl font-bold">{user?.credits || 0}</p>
+                </div>
+              </div>
+              <Link to="/recharge-credits">
+                <Button className="bg-[#06B6D4] hover:bg-[#0891B2] text-white font-semibold">
+                  Recharger
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Progress Card */}
             <Card className="lg:col-span-1 bg-[#12121F] border-[#1E1E3A]">
@@ -109,7 +226,7 @@ export default function DashboardPage() {
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-[#94A3B8]">Objectif 30 contenus/mois</span>
-                    <span className="font-bold">12/30</span>
+                    <span className="font-bold">{monthlyCount}/30</span>
                   </div>
                   <Progress value={progressValue} className="h-3 bg-[#1E1E3A] [&>div]:bg-gradient-to-r [&>div]:from-[#7C3AED] [&>div]:to-[#06B6D4]" />
                 </div>
