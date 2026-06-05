@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { adminDb } from './firebaseAdmin'; 
+import { adminDb } from './_firebaseAdmin'; 
 import { FieldValue } from 'firebase-admin/firestore';
 
 const TOOL_COSTS: Record<string, number> = {

@@ -1,4 +1,4 @@
-import { adminDb } from './firebaseAdmin';
+import { adminDb } from './_firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
 
 const PACK_CREDITS: Record<string, number> = {
