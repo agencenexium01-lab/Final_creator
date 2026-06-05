@@ -2,10 +2,10 @@ import { ToolType } from '../types';
 
 // Coût en crédits par type d'outil
 const CREDIT_COSTS: Record<ToolType, number> = {
-  hooks: 10,
-  script: 15,
-  ideas: 5,
-  calendar: 20,
+  hooks: 1,
+  script: 1,
+  ideas: 1,
+  calendar: 2,
 };
 
 export const creditService = {

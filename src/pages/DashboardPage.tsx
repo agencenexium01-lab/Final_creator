@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -12,6 +11,7 @@ import { useAppStore } from '@/stores/appStore';
 import { authService } from '@/services/authService';
 import { DAILY_INSPIRATIONS, NICHES, PLATFORMS } from '@/config/constants';
 import { geminiService } from '@/services/geminiService';
+import { useCredits } from '@/hooks/useCredits';
 import toast from 'react-hot-toast';
 
 export default function DashboardPage() {
@@ -24,6 +24,8 @@ export default function DashboardPage() {
   const [paymentStatus, setPaymentStatus] = useState<'success' | 'pending' | 'failed' | null>(null);
   const [paymentMessage, setPaymentMessage] = useState('');
 
+  const { isLowBalance, remainingText } = useCredits(user?.credits || 0);
+
   const getEncouragementMessage = (count: number) => {
     if (count === 0) return "Premier pas ! Lance-toi dès maintenant 🚀";
     if (count === 1) return "Tu as commencé ! Continue sur cette lancée 🔥";
@@ -34,44 +36,20 @@ export default function DashboardPage() {
   };
   
   useEffect(() => {
-    // Check for successful payment
-    const sessionId = searchParams.get('session_id');
-    if (sessionId) {
-      verifyPayment(sessionId);
-    }
-  }, [searchParams]);
-
-  const verifyPayment = async (sessionId: string) => {
-    try {
-      const response = await fetch(`/api/verify-payment/${sessionId}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setPaymentStatus('success');
-          setPaymentMessage(`✨ ${data.credits} crédits ont été ajoutés à votre compte!`);
-          
-          const updatedUser = await authService.getProfile();
-          if (updatedUser) {
-            updateProfile({ credits: updatedUser.credits });
-          }
-          
-          toast.success(data.message);
-          
-          // Clear URL params
-          setTimeout(() => {
-            window.history.replaceState({}, document.title, '/dashboard');
-          }, 3000);
+    if (searchParams.get('payment') === 'success') {
+      toast.success('Crédits ajoutés à votre compte !');
+      authService.getProfile().then((updatedUser) => {
+        if (updatedUser) {
+          updateProfile({ credits: updatedUser.credits });
         }
-      }
-    } catch (error) {
-      console.error('Payment verification error:', error);
-      setPaymentStatus('failed');
-      setPaymentMessage('Erreur lors de la vérification du paiement.');
+      });
+      setPaymentStatus('success');
+      setPaymentMessage('Crédits ajoutés à votre compte !');
+      window.history.replaceState({}, document.title, '/dashboard');
     }
-  };
+  }, [searchParams, updateProfile]);
   
   useEffect(() => {
-    // Random inspiration at each login
     const randomInspiration = DAILY_INSPIRATIONS[Math.floor(Math.random() * DAILY_INSPIRATIONS.length)];
     setInspiration(randomInspiration);
     
@@ -80,17 +58,10 @@ export default function DashboardPage() {
         const data = await geminiService.getHistory(5);
         setHistory(data);
         
-        // Count generations from current month
         const now = new Date();
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
         
-        const monthlyGenerations = data.filter(item => {
-          const itemDate = new Date((item as any).created_at);
-          return itemDate.getMonth() === currentMonth && itemDate.getFullYear() === currentYear;
-        });
-        
-        // Count all generations from current month (not just from history)
         const allGenerations = await geminiService.getMonthlyCount(currentMonth, currentYear);
         setMonthlyCount(allGenerations);
       } catch (error) {
@@ -125,13 +96,22 @@ export default function DashboardPage() {
       
       <main className="flex-1 p-4 md:p-8 overflow-y-auto">
         <div className="max-w-6xl mx-auto space-y-8">
+          
           {/* Header */}
           <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl md:text-3xl font-bold">Bonjour {user?.name} 👋</h1>
               <p className="text-[#94A3B8]">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <Badge variant="outline" className="bg-[#1E1E3A] border-[#2D2D5E] text-[#F1F5F9] px-3 py-1">
+                {remainingText}
+              </Badge>
+              {isLowBalance && (
+                <Badge variant="outline" className="bg-[#F59E0B]/20 border-[#F59E0B] text-[#F59E0B] px-3 py-1">
+                  Solde faible — Rechargez
+                </Badge>
+              )}
               <Badge variant="outline" className="bg-[#1E1E3A] border-[#2D2D5E] text-[#F1F5F9] px-3 py-1">
                 {nicheLabel}
               </Badge>
@@ -141,7 +121,7 @@ export default function DashboardPage() {
             </div>
           </header>
 
-          {/* Payment Status Alert */}
+          {/* Payment Status Alerts */}
           {paymentStatus === 'success' && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
@@ -205,7 +185,7 @@ export default function DashboardPage() {
                   <p className="text-3xl font-bold">{user?.credits || 0}</p>
                 </div>
               </div>
-              <Link to="/recharge-credits">
+              <Link to="/pricing">
                 <Button className="bg-[#06B6D4] hover:bg-[#0891B2] text-white font-semibold">
                   Recharger
                 </Button>
@@ -242,7 +222,7 @@ export default function DashboardPage() {
                 <Link key={tool.id} to={`/tools/${tool.id}`}>
                   <Card className="h-full bg-[#12121F] border-[#1E1E3A] hover:border-[#7C3AED]/50 transition-all group cursor-pointer">
                     <CardContent className="p-6">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-transform group-hover:scale-110`} style={{ backgroundColor: `${tool.color}20` }}>
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-transform group-hover:scale-110" style={{ backgroundColor: `${tool.color}20` }}>
                         <tool.icon className="w-6 h-6" style={{ color: tool.color }} />
                       </div>
                       <h3 className="font-bold text-lg mb-2">{tool.title}</h3>

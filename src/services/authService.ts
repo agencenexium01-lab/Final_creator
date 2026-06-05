@@ -21,7 +21,7 @@ const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 const buildUserProfile = async (firebaseUser: any, name: string): Promise<UserProfile> => {
-  const userDoc = await getDoc(doc(db, 'profiles', firebaseUser.uid));
+  const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
   if (userDoc.exists()) {
     return userDoc.data() as UserProfile;
   }
@@ -32,11 +32,15 @@ const buildUserProfile = async (firebaseUser: any, name: string): Promise<UserPr
     email: firebaseUser.email || '',
     platform: 'both',
     credits: 0,
+    totalCreditsUsed: 0,
+    totalCreditsPurchased: 0,
+    lastPurchaseDate: '',
+    lastPurchasePack: '',
     onboarding_completed: false,
     created_at: new Date().toISOString(),
   };
 
-  await setDoc(doc(db, 'profiles', firebaseUser.uid), newUser);
+  await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
   return newUser;
 };
 
@@ -69,27 +73,24 @@ export const authService = {
   
   updateProfile: async (updates: Partial<UserProfile>): Promise<UserProfile> => {
     if (!auth.currentUser) throw new Error("Non authentifié");
-    if (Object.keys(updates).length === 0) {
-      const userRef = doc(db, 'profiles', auth.currentUser.uid);
-      const updatedDoc = await getDoc(userRef);
-      return updatedDoc.data() as UserProfile;
+    const userRef = doc(db, 'users', auth.currentUser.uid);
+    if (Object.keys(updates).length > 0) {
+      await updateDoc(userRef, updates);
     }
-    const userRef = doc(db, 'profiles', auth.currentUser.uid);
-    await updateDoc(userRef, updates);
     const updatedDoc = await getDoc(userRef);
     return updatedDoc.data() as UserProfile;
   },
 
   getProfile: async (): Promise<UserProfile | null> => {
     if (!auth.currentUser) return null;
-    const userRef = doc(db, 'profiles', auth.currentUser.uid);
+    const userRef = doc(db, 'users', auth.currentUser.uid);
     const userDoc = await getDoc(userRef);
     return userDoc.exists() ? (userDoc.data() as UserProfile) : null;
   },
 
   addCredits: async (amount: number): Promise<UserProfile> => {
     if (!auth.currentUser) throw new Error("Non authentifié");
-    const userRef = doc(db, 'profiles', auth.currentUser.uid);
+    const userRef = doc(db, 'users', auth.currentUser.uid);
     const currentDoc = await getDoc(userRef);
     const currentData = currentDoc.exists() ? (currentDoc.data() as UserProfile) : { credits: 0 } as UserProfile;
     const newCredits = (currentData.credits || 0) + amount;
@@ -101,7 +102,7 @@ export const authService = {
   onAuthChange: (callback: (user: UserProfile | null) => void) => {
     return onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, 'profiles', firebaseUser.uid));
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (userDoc.exists()) {
           callback(userDoc.data() as UserProfile);
         } else {

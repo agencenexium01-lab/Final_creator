@@ -78,10 +78,24 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
-    match /profiles/{userId} {
+    function isValidUser(data) {
+      return data.keys().hasAll(['name', 'email', 'platform', 'onboarding_completed', 'credits', 'totalCreditsUsed', 'totalCreditsPurchased', 'lastPurchaseDate', 'lastPurchasePack', 'created_at']) &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 50 &&
+             isValidEmail(data.email) &&
+             data.platform in ['tiktok', 'facebook', 'both'] &&
+             data.onboarding_completed is bool &&
+             data.credits is number && data.credits >= 0 &&
+             data.totalCreditsUsed is number && data.totalCreditsUsed >= 0 &&
+             data.totalCreditsPurchased is number && data.totalCreditsPurchased >= 0 &&
+             data.lastPurchaseDate is string &&
+             data.lastPurchasePack in ['starter', 'createur', 'pro', ''] &&
+             data.created_at is string;
+    }
+
+    match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidProfile(request.resource.data);
-      allow update: if isOwner(userId) && isValidProfile(request.resource.data) && 
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) &&
                     request.resource.data.email == resource.data.email;
     }
 

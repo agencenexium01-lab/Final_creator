@@ -22,7 +22,7 @@ export default function Sidebar() {
     { icon: PenTool, label: 'Scripts Vidéo', path: '/tools/script' },
     { icon: Lightbulb, label: 'Banque d\'Idées', path: '/tools/ideas' },
     { icon: Calendar, label: 'Calendrier 30 Jours', path: '/tools/calendar' },
-    { icon: Zap, label: 'Recharger les crédits', path: '/recharge-credits' },
+    { icon: Zap, label: 'Recharger les crédits', path: '/pricing' },
     { icon: BookOpen, label: 'Guide Créateur', path: '/guide' },
   ];
 

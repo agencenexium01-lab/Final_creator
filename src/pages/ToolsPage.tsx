@@ -12,11 +12,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import Sidebar from '@/components/layout/Sidebar';
 import { useAppStore } from '@/stores/appStore';
-import { geminiService } from '@/services/geminiService';
 import { creditService } from '@/services/creditService';
 import { authService } from '@/services/authService';
+import { apiService } from '@/services/api';
 import { NICHES } from '@/config/constants';
 import toast from 'react-hot-toast';
 import { jsPDF } from 'jspdf';
@@ -60,67 +61,60 @@ export default function ToolsPage() {
     setResults(null);
   }, [toolId]);
 
-  // --- MODIFIED HANDLE GENERATE WITH CREDITS CHECK ---
+  const [showBlockedModal, setShowBlockedModal] = useState(false);
+
   const handleGenerate = async () => {
     if (isLoading) return;
 
-    // Check credits
-    const hasCredits = creditService.hasEnoughCredits(user?.credits || 0, toolId as any);
+    if (!user) {
+      toast.error('Utilisateur non trouvé.');
+      return;
+    }
+
+    const hasCredits = creditService.hasEnoughCredits(user.credits, toolId as any);
     if (!hasCredits) {
+      if (user.credits <= 0) {
+        setShowBlockedModal(true);
+        return;
+      }
+
       toast.error(`Crédits insuffisants. Vous avez besoin de ${creditCost} crédit(s).`, {
         duration: 5000,
       });
-      
-      // Show go to recharge button
-      setTimeout(() => {
-        toast((t) => (
-          <div>
-            <p className="mb-3">Allez recharger vos crédits</p>
-            <Button
-              onClick={() => {
-                navigate('/recharge-credits');
-                toast.dismiss(t.id);
-              }}
-              className="w-full bg-[#7C3AED] hover:bg-[#6D28D9] text-white"
-              size="sm"
-            >
-              Recharger
-            </Button>
-          </div>
-        ), {
-          duration: 8000,
-        });
-      }, 100);
       return;
     }
-    
+
     setIsLoading(true);
     try {
-      const data = await geminiService.generateContent(toolId as any, formData);
+      const data = await apiService.generateContent({
+        userId: user.id,
+        tool: toolId as string,
+        params: formData,
+      });
       setResults(data);
 
-      // Deduct credits after successful generation
-      const updatedUser = await authService.addCredits(-creditCost);
-      updateProfile({ credits: updatedUser.credits });
-      
-      toast.success(`Génération terminée! ${creditCost} crédit(s) déduit(s).`);
-    } catch (error: any) {
-      console.error("Gemini Error:", error);
+      const updatedUser = await authService.getProfile();
+      if (updatedUser) {
+        updateProfile({ credits: updatedUser.credits });
+      }
 
-      if (error.message?.includes('429') || error.message?.includes('prepayment')) {
-        toast.error("Quota épuisé ou crédit insuffisant sur Google Cloud.", {
-          duration: 5000,
-        });
-      } else if (error.message?.includes('API Key')) {
-        toast.error("Clé API manquante ou invalide.");
+      toast.success(`Génération terminée ! ${creditCost} crédit(s) déduit(s).`);
+    } catch (error: any) {
+      console.error('Generate API Error:', error);
+      if (error?.message === 'INSUFFICIENT_CREDITS') {
+        toast.error('Crédits insuffisants. Rechargez votre compte.');
       } else {
-        toast.error("Une erreur est survenue lors de la génération.");
+        toast.error(error?.message || 'Erreur lors de la génération.');
       }
     } finally {
       setIsLoading(false);
     }
   };
-  // --------------------------------
+
+  const closeBlockedModal = () => {
+    setShowBlockedModal(false);
+    navigate('/pricing');
+  };
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -392,6 +386,25 @@ export default function ToolsPage() {
                   </motion.div>
                 )}
               </AnimatePresence>
+
+              <Dialog open={showBlockedModal} onOpenChange={setShowBlockedModal}>
+                <DialogContent className="bg-[#0b1220] border border-[#1e293b]">
+                  <DialogHeader>
+                    <DialogTitle>Crédits insuffisants</DialogTitle>
+                    <DialogDescription>
+                      Votre solde est à zéro et vous ne pouvez pas générer de contenu pour le moment.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="mt-4 space-y-3 text-sm text-[#cbd5e1]">
+                    <p>Rechargez votre compte pour continuer à utiliser les outils IA.</p>
+                  </div>
+                  <DialogFooter>
+                    <Button onClick={closeBlockedModal} className="bg-[#7c3aed] hover:bg-[#6d28d9] text-white">
+                      Aller à la page des tarifs
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
         </div>
