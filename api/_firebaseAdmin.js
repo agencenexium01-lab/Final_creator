@@ -1,31 +1,36 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
-// 💡 CORRECTION : Utilisation de getApps() à la place de admin.apps.length
 if (getApps().length === 0) {
   try {
-    const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+    let serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
 
     if (!serviceAccountVar) {
       throw new Error("La variable d'environnement FIREBASE_SERVICE_ACCOUNT est manquante !");
     }
 
-    // Nettoyage des retours à la ligne brisés pour Vercel
-    const cleanedServiceAccount = serviceAccountVar.replace(/\\n/g, '\n');
-    
-    // Parsing du JSON
-    const serviceAccount = JSON.parse(cleanedServiceAccount);
+    // 💡 NETTOYAGE ULTRA-ROBUSTE : On remplace les vrais sauts de ligne physiques par des "\n" textuels
+    // et on vire les caractères de contrôle qui font planter JSON.parse
+    serviceAccountVar = serviceAccountVar
+      .replace(/\r?\n/g, '\\n') // Transforme les sauts de ligne physiques en "\n"
+      .replace(/\\n/g, '\n');    // Puis les remet au format attendu par la clé privée
+
+    // Optionnel : Si Vercel a entouré la chaîne de guillemets doubles en trop
+    if (serviceAccountVar.startsWith('"') && serviceAccountVar.endsWith('"')) {
+      serviceAccountVar = serviceAccountVar.slice(1, -1);
+    }
+
+    const serviceAccount = JSON.parse(serviceAccountVar);
 
     initializeApp({
       credential: cert(serviceAccount),
     });
     
-    console.log("🔥 Firebase Admin initialisé avec succès (Format Modulaire ESM).");
+    console.log("🔥 Firebase Admin initialisé avec succès !");
   } catch (error) {
     console.error("❌ Erreur critique lors de l'initialisation de Firebase Admin:", error.message);
     throw error;
   }
 }
 
-// Exportation propre de la base de données de la même manière qu'avant
 export const adminDb = getFirestore();
