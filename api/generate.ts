@@ -65,7 +65,7 @@ const extractJson = (text: string) => {
   try {
     return JSON.parse(text);
   } catch {
-    const match = text.match(/\{[\s\S]*\}/); // Correction regex pour cibler proprement l'objet JSON
+    const match = text.match(/\{[\s\S]*\}/);
     if (match) {
       return JSON.parse(match[0]);
     }
@@ -90,6 +90,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Invalid tool type' });
     }
 
+    // Validation de la clé API Gemini avant d'appeler l'endpoint externe
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'Missing GEMINI_API_KEY environment variable on Vercel' });
+    }
+
     const userRef = adminDb.doc(`users/${userId}`);
     const userSnapshot = await userRef.get();
 
@@ -106,8 +111,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const prompt = buildPrompt(tool, params || {});
     
-    // 💡 MISE À JOUR DE L'API GEMINI : Endpoint stable v1 et structure de payload conforme
-    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+    // 🔥 MODIFICATION ICI : Passage sur l'endpoint v1 stable global pour éliminer le NOT_FOUND (Error 5)
+    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -119,24 +124,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         generationConfig: {
           temperature: 0.7,
           maxOutputTokens: 2500,
-          responseMimeType: "application/json" // Force Gemini à renvoyer du pur JSON
+          responseMimeType: "application/json" 
         }
       }),
     });
 
     if (!aiResponse.ok) {
-      const errorData = await aiResponse.text();
-      return res.status(502).json({ error: 'Gemini API error', details: errorData });
+      const errorData = await aiResponse.json().catch(() => ({}));
+      console.error('Gemini Raw Error:', errorData);
+      return res.status(502).json({ 
+        error: 'Gemini API error', 
+        code: aiResponse.status, 
+        details: errorData?.error?.message || 'Unknown Gemini error' 
+      });
     }
 
     const aiData = await aiResponse.json();
     const aiText = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
+    if (!aiText) {
+      return res.status(502).json({ error: 'EMPTY_AI_RESPONSE', details: 'Gemini returned an empty text content.' });
+    }
+
     let parsedResult;
     try {
       parsedResult = extractJson(aiText);
     } catch (error: any) {
-      return res.status(500).json({ error: 'AI_RESPONSE_PARSE_FAILED', details: error.message });
+      return res.status(500).json({ error: 'AI_RESPONSE_PARSE_FAILED', details: error.message, rawText: aiText });
     }
 
     await adminDb.runTransaction(async (transaction) => {
