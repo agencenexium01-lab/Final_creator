@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { adminDb } from './_firebaseAdmin'; 
+// 💡 CORRECTION DU CRASH : Ajout explicite de l'extension pour le moteur ESM de Vercel
+import { adminDb } from './_firebaseAdmin.ts'; 
 import { FieldValue } from 'firebase-admin/firestore';
 
 const TOOL_COSTS: Record<string, number> = {
@@ -9,7 +10,6 @@ const TOOL_COSTS: Record<string, number> = {
   calendar: 2,
 };
 
-// --- TES FONCTIONS DE BASE REMISES ICI POUR CORRIGER L'ERREUR ROUGE ---
 const buildPrompt = (tool: string, params: Record<string, any>) => {
   const { niche, platform, topic, tone, hook, message, goal, duration } = params;
   const context = `Niche: ${niche || 'générique'}\nPlateforme: ${platform || 'both'}\n`; 
@@ -66,7 +66,7 @@ const extractJson = (text: string) => {
   try {
     return JSON.parse(text);
   } catch {
-    const match = text.match(/\{[\s\S]*\}$/);
+    const match = text.match(/\{[\s\S]*\}/); // Correction regex pour cibler proprement l'objet JSON
     if (match) {
       return JSON.parse(match[0]);
     }
@@ -74,7 +74,6 @@ const extractJson = (text: string) => {
   }
 };
 
-// --- HANDLER VERCEL ---
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method !== 'POST') {
@@ -108,16 +107,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const prompt = buildPrompt(tool, params || {});
     
-    const aiResponse = await fetch('https://generativeai.googleapis.com/v1beta2/models/gemini-flash-latest:generate', {
+    // 💡 MISE À JOUR DE L'API GEMINI : Endpoint stable v1 et structure de payload conforme
+    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        prompt: { text: prompt },
-        temperature: 0.7,
-        maxOutputTokens: 1200,
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2500,
+          responseMimeType: "application/json" // Force Gemini à renvoyer du pur JSON
+        }
       }),
     });
 
@@ -127,7 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const aiData = await aiResponse.json();
-    const aiText = aiData?.candidates?.[0]?.content?.[0]?.text || aiData?.candidates?.[0]?.content || '';
+    const aiText = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
     let parsedResult;
     try {
