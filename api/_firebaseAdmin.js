@@ -11,7 +11,6 @@ if (getApps().length === 0) {
       throw new Error("Variables d'environnement Firebase Admin incomplètes sur Vercel !");
     }
 
-    // Remplacement propre des sauts de ligne textuels
     const formattedPrivateKey = privateKey.replace(/\\n/g, '\n');
 
     initializeApp({
@@ -29,4 +28,9 @@ if (getApps().length === 0) {
   }
 }
 
-export const adminDb = getFirestore();
+// 💡 CORRECTION: Récupérer l'ID de la base de données depuis les variables d'environnement
+// On regarde d'abord une variable dédiée, sinon on réutilise celle de Vite présente sur Vercel
+const dbId = process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID;
+
+// On passe l'ID de la base directement à getFirestore() pour l'Admin SDK
+export const adminDb = dbId ? getFirestore(dbId) : getFirestore();
