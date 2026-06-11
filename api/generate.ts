@@ -176,12 +176,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(402).json({ error: 'INSUFFICIENT_CREDITS' });
     }
 
-    // 2. Appel à l'API Gemini
+   // 2. Appel à l'API Gemini (Alias universel pour l'API REST v1)
     const prompt = buildPrompt(tool, params || {});
     
-    console.log("[GEMINI] Envoi du prompt à l'API stable...");
+    console.log("[GEMINI] Envoi du prompt à l'API avec le modèle universel...");
 
-    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+    // Utilisez "models/gemini-pro" qui possède le routage REST le plus stable et permissif sur la v1 pour ces projets
+    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${geminiKey}`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json'
@@ -189,12 +190,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({
         contents: [{ 
           parts: [{ text: prompt }] 
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 2500,
-          // Note: Si le format standard pose problème, on laisse Gemini générer le texte que extractJson analysera
-        }
+        }]
       }),
     });
 
