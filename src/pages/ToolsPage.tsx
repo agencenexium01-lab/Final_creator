@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Zap, PenTool, Lightbulb, Calendar as CalendarIcon, 
-  Loader2, Copy, Check, RefreshCw, Download, 
-  ChevronRight, ArrowLeft, Star, AlertCircle
+  Loader2, Copy, Check, Download, 
+  ArrowLeft, Star, AlertCircle, Edit3
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,7 @@ export default function ToolsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isCustomNiche, setIsCustomNiche] = useState(false);
 
   const creditCost = creditService.getCost(toolId as any);
 
@@ -124,21 +125,26 @@ export default function ToolsPage() {
   };
 
   const exportToPDF = async () => {
-    const element = document.getElementById('calendar-results');
+    const element = document.getElementById('calendar-printable-area');
     if (!element) return;
     
     setIsLoading(true);
     try {
-      const canvas = await html2canvas(element, { backgroundColor: '#0A0A14' });
+      const canvas = await html2canvas(element, { 
+        backgroundColor: '#12121F',
+        scale: 2
+      });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`calendrier-30-jours-${formData.niche}.pdf`);
+      pdf.save(`calendrier-30-jours-${formData.niche || 'personnalise'}.pdf`);
       toast.success("PDF téléchargé !");
     } catch (error) {
+      console.error(error);
       toast.error("Erreur lors de l'export PDF.");
     } finally {
       setIsLoading(false);
@@ -151,6 +157,15 @@ export default function ToolsPage() {
     ideas: { title: 'Banque d\'Idées', icon: Lightbulb, desc: 'Des idées de contenus originaux pour ta niche.' },
     calendar: { title: 'Calendrier 30 Jours', icon: CalendarIcon, desc: 'Ton plan d\'action complet pour le mois.' },
   }[toolId as string] || { title: 'Outil', icon: Zap, desc: '' };
+
+  // Helper pour extraire le texte ou les objets de calendrier
+  const getRawCalendarText = () => {
+    if (!results) return '';
+    if (typeof results === 'string') return results;
+    if (results.result && typeof results.result === 'string') return results.result;
+    if (results.outputData && typeof results.outputData === 'string') return results.outputData;
+    return JSON.stringify(results);
+  };
 
   return (
     <div className="flex min-h-screen bg-[#0A0A14]">
@@ -177,18 +192,44 @@ export default function ToolsPage() {
             <div className="lg:col-span-4 space-y-6">
               <Card className="bg-[#12121F] border-[#1E1E3A]">
                 <CardContent className="p-6 space-y-4">
+                  
+                  {/* Niche Selection */}
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-[#94A3B8] uppercase">Niche</label>
-                    <Select value={formData.niche} onValueChange={(v: string | null) => setFormData({ ...formData, niche: v ?? '' })}>
-                      <SelectTrigger className="bg-[#1A1A2E] border-[#2D2D5E] text-white">
-                        <SelectValue placeholder="Choisir une niche" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#12121F] border-[#1E1E3A] text-white">
-                        {NICHES.map(n => <SelectItem key={n.id} value={n.id}>{n.icon} {n.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-[#94A3B8] uppercase">Niche</label>
+                      <Button 
+                        variant="link" 
+                        size="sm" 
+                        className="text-xs text-[#7C3AED] p-0 h-auto"
+                        onClick={() => {
+                          setIsCustomNiche(!isCustomNiche);
+                          setFormData({ ...formData, niche: '' });
+                        }}
+                      >
+                        {isCustomNiche ? "Choisir dans la liste" : "Écrire ma propre niche"}
+                      </Button>
+                    </div>
+                    
+                    {isCustomNiche ? (
+                      <Input 
+                        value={formData.niche}
+                        onChange={(e) => setFormData({ ...formData, niche: e.target.value })}
+                        placeholder="Ex: Pâtisserie végane, Domotique..."
+                        className="bg-[#1A1A2E] border-[#2D2D5E] text-white h-10"
+                      />
+                    ) : (
+                      <Select value={formData.niche} onValueChange={(v: string | null) => setFormData({ ...formData, niche: v ?? '' })}>
+                        <SelectTrigger className="bg-[#1A1A2E] border-[#2D2D5E] text-white">
+                          <SelectValue placeholder="Choisir une niche" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#12121F] border-[#1E1E3A] text-white">
+                          {NICHES.map(n => <SelectItem key={n.id} value={n.id}>{n.icon} {n.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
 
+                  {/* Platform Selection */}
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-[#94A3B8] uppercase">Plateforme</label>
                     <div className="flex gap-2">
@@ -207,33 +248,35 @@ export default function ToolsPage() {
                     </div>
                   </div>
 
+                  {/* Global Tone Selection (Accessible to all tools) */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-[#94A3B8] uppercase">Ton du contenu</label>
+                    <Select value={formData.tone} onValueChange={(v: string | null) => setFormData({ ...formData, tone: v ?? 'Motivationnel' })}>
+                      <SelectTrigger className="bg-[#1A1A2E] border-[#2D2D5E] text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#12121F] border-[#1E1E3A] text-white">
+                        {['Motivationnel', 'Controversé', 'Éducatif', 'Storytelling', 'Drôle', 'Provocateur', 'Professionnel'].map(t => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Hooks Specific Inputs */}
                   {toolId === 'hooks' && (
-                    <>
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-[#94A3B8] uppercase">Sujet spécifique</label>
-                        <Textarea 
-                          value={formData.topic}
-                          onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
-                          placeholder="Ex: comment j'ai gagné mon premier client..."
-                          className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[80px] text-white"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-[#94A3B8] uppercase">Ton</label>
-                        <Select value={formData.tone} onValueChange={(v: string | null) => setFormData({ ...formData, tone: v ?? 'Motivationnel' })}>
-                          <SelectTrigger className="bg-[#1A1A2E] border-[#2D2D5E] text-white">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-[#12121F] border-[#1E1E3A] text-white">
-                            {['Motivationnel', 'Controversé', 'Éducatif', 'Storytelling', 'Drôle', 'Provocateur'].map(t => (
-                              <SelectItem key={t} value={t}>{t}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-[#94A3B8] uppercase">Sujet spécifique</label>
+                      <Textarea 
+                        value={formData.topic}
+                        onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
+                        placeholder="Ex: comment j'ai gagné mon premier client..."
+                        className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[80px] text-white"
+                      />
+                    </div>
                   )}
 
+                  {/* Scripts Specific Inputs */}
                   {toolId === 'script' && (
                     <>
                       <div className="space-y-2">
@@ -255,6 +298,19 @@ export default function ToolsPage() {
                         />
                       </div>
                     </>
+                  )}
+
+                  {/* Ideas and Calendar Specific Inputs */}
+                  {(toolId === 'ideas' || toolId === 'calendar') && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-[#94A3B8] uppercase">Instructions ou contexte client</label>
+                      <Textarea 
+                        value={formData.message}
+                        onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                        placeholder="Donne plus de détails sur tes attentes, ton offre, ta cible ou le type de contenu voulu..."
+                        className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[100px] text-white"
+                      />
+                    </div>
                   )}
 
                   {/* Credits Info */}
@@ -364,9 +420,7 @@ export default function ToolsPage() {
                     {toolId === 'script' && (
                       <Card className="bg-[#12121F] border-[#1E1E3A]">
                         <CardHeader className="border-b border-[#1E1E3A]">
-                          <div className="flex items-center justify-between">
-                            <CardTitle className="text-white">Script {results.platform}</CardTitle>
-                          </div>
+                          <CardTitle className="text-white">Script {results.platform}</CardTitle>
                         </CardHeader>
                         <CardContent className="p-6 space-y-6">
                           {results.sections?.map((section: any) => (
@@ -383,6 +437,70 @@ export default function ToolsPage() {
                         </CardContent>
                       </Card>
                     )}
+
+                    {/* Render Ideas Bank */}
+                    {toolId === 'ideas' && (
+                      <div className="space-y-4">
+                        <h2 className="text-lg font-bold text-[#F59E0B] flex items-center gap-2">
+                          <Lightbulb className="w-5 h-5" /> Banque d'idées générée
+                        </h2>
+                        {(results.ideas || (Array.isArray(results) ? results : [])).map((idea: any, idx: number) => (
+                          <Card key={idx} className="bg-[#12121F] border-[#1E1E3A]">
+                            <CardContent className="p-5 flex justify-between items-start gap-4">
+                              <div className="space-y-1">
+                                <h4 className="font-bold text-white text-base">{idea.title}</h4>
+                                <p className="text-sm text-gray-300 leading-relaxed">{idea.description}</p>
+                                {idea.format && <Badge className="mt-2 bg-[#1A1A2E] text-[#F59E0B] border-[#F59E0B]/20">{idea.format}</Badge>}
+                              </div>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-gray-400 hover:text-white"
+                                onClick={() => copyToClipboard(`${idea.title}\n${idea.description}`, `idea-${idx}`)}
+                              >
+                                {copiedId === `idea-${idx}` ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                              </Button>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Render 30-Day Calendar */}
+                    {toolId === 'calendar' && (
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <h2 className="text-lg font-bold text-[#10B981] flex items-center gap-2">
+                            <CalendarIcon className="w-5 h-5" /> Votre Plan d'action 30 Jours
+                          </h2>
+                          <Button 
+                            onClick={exportToPDF} 
+                            disabled={isLoading}
+                            className="bg-[#10B981] hover:bg-[#0f9f6e] text-white flex items-center gap-2 text-xs"
+                          >
+                            <Download className="w-4 h-4" /> Exporter en PDF
+                          </Button>
+                        </div>
+                        
+                        <Card id="calendar-printable-area" className="bg-[#12121F] border-[#1E1E3A] p-6 relative">
+                          <div className="absolute top-4 right-4">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-gray-400 hover:text-white"
+                              onClick={() => copyToClipboard(getRawCalendarText(), 'cal-raw')}
+                            >
+                              {copiedId === 'cal-raw' ? <Check className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
+                              Tout copier
+                            </Button>
+                          </div>
+                          <pre className="whitespace-pre-wrap font-sans text-gray-200 leading-relaxed text-sm bg-[#0A0A14] p-5 rounded-xl border border-[#1E1E3A] mt-6">
+                            {getRawCalendarText()}
+                          </pre>
+                        </Card>
+                      </div>
+                    )}
+
                   </motion.div>
                 )}
               </AnimatePresence>
