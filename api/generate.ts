@@ -152,7 +152,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const firestoreUserUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${dbId}/documents/users/${userId}`;
 
-    // 1. Lecture de l'utilisateur (avec en-tête Authorization maintenant !)
     const userResponse = await fetch(firestoreUserUrl, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     });
