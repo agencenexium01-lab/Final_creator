@@ -176,12 +176,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(402).json({ error: 'INSUFFICIENT_CREDITS' });
     }
 
-   // 2. Appel à l'API Gemini (Utilisation du modèle 2.0 Flash disponible dans ton projet)
+   // 2. Appel à l'API Gemini (Version 2.5 Flash active dans ton projet)
     const prompt = buildPrompt(tool, params || {});
     
-    console.log("[GEMINI] Envoi du prompt au modèle gemini-2.0-flash...");
+    console.log("[GEMINI] Envoi du prompt au modèle gemini-2.5-flash-preview-05-20...");
 
-    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiKey}`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json'
