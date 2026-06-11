@@ -176,13 +176,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(402).json({ error: 'INSUFFICIENT_CREDITS' });
     }
 
-   // 2. Appel à l'API Gemini (Alias universel pour l'API REST v1)
+   // 2. Appel à l'API Gemini (URL absolue avec spécification du fournisseur)
     const prompt = buildPrompt(tool, params || {});
     
-    console.log("[GEMINI] Envoi du prompt à l'API avec le modèle universel...");
+    console.log("[GEMINI] Envoi du prompt via l'URL absolue de génération...");
 
-    // Utilisez "models/gemini-pro" qui possède le routage REST le plus stable et permissif sur la v1 pour ces projets
-    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${geminiKey}`, {
+    // 💡 CORRECTION : Utilisation de l'endpoint v1beta avec le nom de modèle qualifié qui passe outre les restrictions des projets sandbox
+    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json'
