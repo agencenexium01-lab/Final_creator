@@ -13,10 +13,11 @@ if (getApps().length === 0) {
 
     const formattedPrivateKey = privateKey.replace(/\\n/g, '\n');
 
-    // 💡 LA CORRECTION EST ICI : 
-    // Si tu as une base de données nommée, on la passe dans les options de initializeApp
     const dbId = process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID;
     
+    // 💡 LOG DE SÉCURITÉ : On vérifie ce qui est envoyé à Google Cloud
+    console.log(`[ADMIN INIT] Initialisation pour le projet: "${projectId}" | Base de données ciblée: "${dbId || '(default)'}"`);
+
     const appConfig = {
       credential: cert({
         projectId: projectId,
@@ -25,19 +26,18 @@ if (getApps().length === 0) {
       })
     };
 
-    // Si un ID de base existe et n'est pas la base par défaut, on l'injecte
-    if (dbId) {
+    // N'injecter databaseId que si la variable existe ET n'est pas "(default)"
+    if (dbId && dbId !== '(default)') {
       appConfig.databaseId = dbId;
     }
 
     initializeApp(appConfig);
     
-    console.log("🔥 Firebase Admin initialisé proprement avec la bonne base !");
+    console.log("🔥 Firebase Admin initialisé proprement !");
   } catch (error) {
     console.error("❌ Erreur critique Firebase Admin:", error.message);
     throw error;
   }
 }
 
-// On l'instancie normalement maintenant, il héritera de la config passée au-dessus
 export const adminDb = getFirestore();
