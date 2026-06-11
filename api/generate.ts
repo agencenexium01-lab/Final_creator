@@ -177,12 +177,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 2. Appel à l'API Gemini
-    // 2. Appel à l'API Gemini (Version ultra-compatible)
     const prompt = buildPrompt(tool, params || {});
     
-    console.log("[GEMINI] Envoi du prompt à l'API...");
+    console.log("[GEMINI] Envoi du prompt à l'API stable...");
 
-    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json'
@@ -194,7 +193,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         generationConfig: {
           temperature: 0.7,
           maxOutputTokens: 2500,
-          responseMimeType: "application/json" 
+          // Note: Si le format standard pose problème, on laisse Gemini générer le texte que extractJson analysera
         }
       }),
     });
