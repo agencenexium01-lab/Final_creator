@@ -176,13 +176,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(402).json({ error: 'INSUFFICIENT_CREDITS' });
     }
 
-   // 2. Appel à l'API Gemini (URL absolue avec spécification du fournisseur)
+   // 2. Appel à l'API Gemini (Utilisation du modèle 2.0 Flash disponible dans ton projet)
     const prompt = buildPrompt(tool, params || {});
     
-    console.log("[GEMINI] Envoi du prompt via l'URL absolue de génération...");
+    console.log("[GEMINI] Envoi du prompt au modèle gemini-2.0-flash...");
 
-    // 💡 CORRECTION : Utilisation de l'endpoint v1beta avec le nom de modèle qualifié qui passe outre les restrictions des projets sandbox
-    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json'
