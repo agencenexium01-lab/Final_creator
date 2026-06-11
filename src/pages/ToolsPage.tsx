@@ -20,8 +20,6 @@ import { authService } from '@/services/authService';
 import { apiService } from '@/services/api';
 import { NICHES } from '@/config/constants';
 import toast from 'react-hot-toast';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
 
 export default function ToolsPage() {
   const { toolId } = useParams<{ toolId: string }>();
@@ -125,57 +123,57 @@ export default function ToolsPage() {
   };
 
   const exportToPDF = () => {
-  const calendarText = getRawCalendarText();
-  if (!calendarText) {
-    toast.error("Aucun contenu à exporter.");
-    return;
-  }
-  
-  setIsLoading(true);
-  try {
-    // 1. Initialiser jsPDF en format A4 standard
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    
-    // 2. Configurer une police propre et lisible pour du code/texte structuré
-    pdf.setFont("courier", "normal");
-    pdf.setFontSize(10);
-    pdf.setTextColor(20, 20, 20); // Texte sombre pour l'impression sur fond blanc
-    
-    // 3. Découper le texte automatiquement pour qu'il ne dépasse pas de la page A4 (largeur max ~180mm)
-    const splitText = pdf.splitTextToSize(calendarText, 180);
-    
-    // 4. Gérer la pagination automatique si le calendrier fait plusieurs pages
-    let y = 15; // Marge du haut
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    
-    // Titre du document
-    pdf.setFont("courier", "bold");
-    pdf.setFontSize(14);
-    pdf.text(`Calendrier de Contenu - Niche: ${formData.niche || 'Personnalisee'}`, 15, y);
-    y += 10;
-    
-    pdf.setFont("courier", "normal");
-    pdf.setFontSize(10);
-    
-    for (let i = 0; i < splitText.length; i++) {
-      if (y > pageHeight - 15) { // Si on arrive en bas de page, on crée une nouvelle page
-        pdf.addPage();
-        y = 15; // Reset de la marge du haut sur la nouvelle page
-      }
-      pdf.text(splitText[i], 15, y);
-      y += 6; // Hauteur de ligne (interligne)
+    const calendarText = getRawCalendarText();
+    if (!calendarText) {
+      toast.error("Aucun contenu à exporter.");
+      return;
     }
     
-    // 5. Sauvegarder le fichier
-    pdf.save(`calendrier-30-jours-${formData.niche || 'personnalise'}.pdf`);
-    toast.success("PDF téléchargé avec succès !");
-  } catch (error) {
-    console.error(error);
-    toast.error("Erreur lors de la génération du PDF textuel.");
-  } finally {
-    setIsLoading(false);
-  }
-};
+    setIsLoading(true);
+    try {
+      // 1. Initialiser jsPDF en format A4 standard
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      // 2. Configurer une police propre et lisible pour du texte structuré
+      pdf.setFont("courier", "normal");
+      pdf.setFontSize(10);
+      pdf.setTextColor(20, 20, 20); // Texte sombre pour l'impression sur fond blanc
+      
+      // 3. Découper le texte automatiquement pour qu'il ne dépasse pas de la page A4 (largeur max ~180mm)
+      const splitText = pdf.splitTextToSize(calendarText, 180);
+      
+      // 4. Gérer la pagination automatique si le calendrier fait plusieurs pages
+      let y = 15; // Marge du haut initiale
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      
+      // Titre du document
+      pdf.setFont("courier", "bold");
+      pdf.setFontSize(14);
+      pdf.text(`Calendrier de Contenu - Niche: ${formData.niche || 'Personnalisee'}`, 15, y);
+      y += 10;
+      
+      pdf.setFont("courier", "normal");
+      pdf.setFontSize(10);
+      
+      for (let i = 0; i < splitText.length; i++) {
+        if (y > pageHeight - 15) { // Si on arrive en bas de page, on crée une nouvelle page
+          pdf.addPage();
+          y = 15; // Reset de la marge du haut sur la nouvelle page
+        }
+        pdf.text(splitText[i], 15, y);
+        y += 6; // Hauteur de ligne (interligne de 6mm)
+      }
+      
+      // 5. Sauvegarder le fichier
+      pdf.save(`calendrier-30-jours-${formData.niche || 'personnalise'}.pdf`);
+      toast.success("PDF téléchargé avec succès !");
+    } catch (error) {
+      console.error(error);
+      toast.error("Erreur lors de la génération du PDF textuel.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const toolInfo = {
     hooks: { title: 'Hooks Viraux', icon: PenTool, desc: 'Génère des accroches qui stoppent le scroll.' },
