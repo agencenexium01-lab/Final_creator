@@ -2,10 +2,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 
 const TOOL_COSTS: Record<string, number> = {
-  hooks: 1,
-  script: 1,
-  ideas: 1,
-  calendar: 2,
+  hooks: 2,
+  script: 4,
+  ideas: 5,
+  calendar: 15,
 };
 
 // 💡 Fonction d'assistance pour générer un jeton d'accès Google OAuth2
