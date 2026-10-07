@@ -1,9 +1,36 @@
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
-import { Zap, ArrowRight, Star } from 'lucide-react';
+import { Zap, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { NICHES } from '@/config/constants';
+
+// Destination unique de tous les boutons de conversion (identique au bouton "Commencer" du hero)
+const CTA_TO = '/signup';
+const CTA_LABEL = 'Créer mon premier mois de contenu →';
+const CTA_CLASS =
+  'w-full sm:w-auto min-h-14 h-auto py-3 px-8 text-base md:text-lg whitespace-normal text-center bg-gradient-to-r from-[#7C3AED] to-[#06B6D4] hover:opacity-90 text-white border-none rounded-xl shadow-lg shadow-[#7C3AED]/20';
+
+const STEPS = [
+  'Connecte-toi avec Google, puis choisis ta niche et ta plateforme.',
+  'Ajoute des crédits par Mobile Money ou par carte, dès 3 000 FCFA.',
+  'Lance ton calendrier de 30 jours, puis génère le script de chaque jour.',
+  'Copie, filme ou publie. Un jour après l\'autre.',
+];
+
+const FEATURES = [
+  'Un calendrier de 30 jours : une idée, un hook et un format pour chaque jour, à télécharger en PDF.',
+  '10 hooks à chaque génération, chacun noté sur 10 avec la raison de la note.',
+  'Pour TikTok, un script prêt à tourner : accroche, contexte, message, twist et appel à l\'action, avec des indications pour filmer.',
+  'Pour Facebook, un post prêt à coller : accroche, développement, point clé, question d\'engagement et hashtags.',
+  '20 idées de contenus quand tu veux en voir plus.',
+];
+
+const PACKS = [
+  { badge: null, name: 'Pack Starter', price: '3 000 FCFA', credits: '50 crédits', detail: '1 mois complet + 18 générations pour tes hooks et tes idées', unit: '60 FCFA la génération' },
+  { badge: 'Recommandé', name: 'Pack Créateur', price: '7 000 FCFA', credits: '150 crédits', detail: 'Plus de 4 mois complets', unit: 'environ 47 FCFA la génération' },
+  { badge: null, name: 'Pack Pro', price: '14 000 FCFA', credits: '350 crédits', detail: '10 mois complets', unit: '40 FCFA la génération' },
+];
 
 export default function LandingPage() {
   return (
@@ -50,17 +77,17 @@ export default function LandingPage() {
                 L'IA au service des créateurs africains 🌍
               </Badge>
               <h1 className="text-3xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-6 bg-gradient-to-b from-white to-[#94A3B8] bg-clip-text text-transparent leading-tight md:leading-none">
-                Crée des contenus viraux <br className="hidden sm:block" /> avec l'IA
+                Ton mois de contenu TikTok et Facebook, planifié en moins d'une minute.
               </h1>
               <p className="text-base md:text-xl text-[#94A3B8] max-w-2xl mx-auto mb-10 leading-relaxed px-2">
-                Le seul outil pensé pour les créateurs TikTok et Facebook d'Afrique francophone. 
-                Génère des hooks, des scripts et des idées adaptés à ta culture.
+                30 jours d'idées, de hooks et de formats, puis un script complet pour chaque vidéo.
+                Écrit en français, pensé pour les créateurs africains francophones.
               </p>
               
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4 max-w-md mx-auto sm:max-w-none">
-                <Button size="lg" asChild className="w-full sm:w-auto h-14 px-8 text-base md:text-lg bg-gradient-to-r from-[#7C3AED] to-[#06B6D4] hover:opacity-90 text-white border-none rounded-xl shadow-lg shadow-[#7C3AED]/20">
-                  <Link to="/signup" className="flex items-center justify-center gap-2">
-                    Commencer <ArrowRight className="w-5 h-5" />
+                <Button size="lg" asChild className={CTA_CLASS}>
+                  <Link to={CTA_TO} data-cta="hero" className="flex items-center justify-center gap-2">
+                    {CTA_LABEL}
                   </Link>
                 </Button>
                 <Button size="lg" variant="outline" asChild className="w-full sm:w-auto h-14 px-8 text-base md:text-lg border-[#1E1E3A] bg-[#12121F] hover:bg-[#1E1E3A] rounded-xl">
@@ -91,6 +118,69 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* BLOC A */}
+        <section className="py-16 md:py-20">
+          <div className="container mx-auto px-4">
+            <div className="max-w-[680px] mx-auto text-center space-y-6 text-[#94A3B8] text-base md:text-lg leading-relaxed">
+              <p>
+                Il est 22 h. Le trépied est installé, la lumière est bonne, le téléphone est prêt.
+                Et tu ne sais pas quoi dire.
+              </p>
+              <p>
+                Tu cherches une idée. Tu en trouves une, elle te paraît banale. Tu en cherches une autre.
+                Une heure plus tard, tu n'as rien filmé. Tu ranges tout en te disant que ce sera pour demain.
+              </p>
+              <p>
+                Pendant ce temps, quelqu'un publie chaque jour dans ta niche. Pas parce qu'il a plus de
+                talent que toi. Parce qu'il n'a jamais à se demander quoi dire.
+              </p>
+              <p className="font-bold text-white">
+                Ce n'est pas ton talent qui te bloque. C'est de repartir de zéro chaque jour.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* BLOC B */}
+        <section className="py-16 md:py-20 bg-[#12121F]/50 border-y border-[#1E1E3A]">
+          <div className="container mx-auto px-4">
+            <div className="max-w-[700px] mx-auto text-center">
+              <h2 className="text-2xl md:text-3xl font-bold mb-8">
+                Creator Booster IA planifie ton mois, puis écrit chaque contenu avec toi.
+              </h2>
+              <ul className="space-y-4 text-[#94A3B8] text-sm md:text-base leading-relaxed">
+                {FEATURES.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+              <p className="mt-8 text-xs md:text-sm text-[#94A3B8]/80">
+                Tout est écrit en français, avec les références et les réalités de ton public.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* BLOC C */}
+        <section className="py-16 md:py-20">
+          <div className="container mx-auto px-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-4xl mx-auto">
+              {STEPS.map((step, i) => (
+                <div
+                  key={i}
+                  className="p-6 md:p-8 rounded-2xl bg-[#12121F] border border-[#1E1E3A] flex items-start gap-4"
+                >
+                  <span className="text-3xl md:text-4xl font-bold text-[#7C3AED] leading-none">{i + 1}</span>
+                  <p className="text-sm md:text-base text-[#94A3B8] leading-relaxed">{step}</p>
+                </div>
+              ))}
+            </div>
+            <p className="max-w-2xl mx-auto mt-8 text-center text-xs md:text-sm text-[#94A3B8]">
+              Ton premier calendrier arrive en quelques secondes, dès que tes crédits sont ajoutés.
+              La démo complète est dans la vidéo ci-dessus.
+            </p>
+          </div>
+        </section>
+
         {/* Niches Section */}
         <section className="py-16 md:py-20 bg-[#12121F]/50 border-y border-[#1E1E3A]">
           <div className="container mx-auto px-4">
@@ -104,6 +194,50 @@ export default function LandingPage() {
                   <span className="mr-1.5">{niche.icon}</span> {niche.label}
                 </Badge>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* BLOC D */}
+        <section className="py-16 md:py-20">
+          <div className="container mx-auto px-4 text-center">
+            <h2 className="text-2xl md:text-3xl font-bold mb-4 max-w-3xl mx-auto">
+              Un mois complet de contenu, c'est 1 calendrier + 30 scripts : 32 crédits.
+            </h2>
+            <p className="text-[#F1F5F9] text-base md:text-lg mb-2">
+              Selon ton pack, ça te revient entre 1 280 et 1 920 FCFA.
+            </p>
+            <p className="text-[#94A3B8] text-xs md:text-sm mb-12">
+              1 crédit = 1 génération. Le calendrier de 30 jours compte pour 2.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 max-w-5xl mx-auto text-left">
+              {PACKS.map((p) => (
+                <div
+                  key={p.name}
+                  className="p-6 md:p-8 rounded-2xl bg-[#12121F] border border-[#1E1E3A] relative overflow-hidden"
+                >
+                  {p.badge && (
+                    <Badge className="mb-4 bg-[#7C3AED]/10 text-[#7C3AED] border-[#7C3AED]/20 hover:bg-[#7C3AED]/20 px-3 py-1 text-xs">
+                      {p.badge}
+                    </Badge>
+                  )}
+                  <h3 className="font-bold text-base md:text-lg mb-1">{p.name}</h3>
+                  <p className="text-2xl md:text-3xl font-bold mb-1">{p.price}</p>
+                  <p className="text-sm md:text-base text-[#F1F5F9] mb-4">{p.credits}</p>
+                  <p className="text-sm md:text-base text-[#94A3B8] leading-relaxed mb-4">{p.detail}</p>
+                  <p className="text-xs md:text-sm text-[#94A3B8]">{p.unit}</p>
+                </div>
+              ))}
+            </div>
+
+            <p className="mt-8 mb-8 text-xs md:text-sm text-[#94A3B8]">
+              Pas d'abonnement. Les crédits n'expirent jamais. Paiement par Mobile Money ou carte bancaire.
+            </p>
+            <div className="flex justify-center max-w-md mx-auto sm:max-w-none">
+              <Button size="lg" asChild className={CTA_CLASS}>
+                <Link to={CTA_TO} data-cta="offer">{CTA_LABEL}</Link>
+              </Button>
             </div>
           </div>
         </section>
@@ -141,6 +275,20 @@ export default function LandingPage() {
                   <p className="text-sm md:text-base text-[#94A3B8] italic leading-relaxed">"{t.text}"</p>
                 </motion.div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* BLOC E */}
+        <section className="py-16 md:py-20">
+          <div className="container mx-auto px-4 text-center">
+            <h2 className="text-2xl md:text-3xl font-bold mb-8 max-w-2xl mx-auto">
+              Ton premier mois de contenu peut être prêt ce soir.
+            </h2>
+            <div className="flex justify-center max-w-md mx-auto sm:max-w-none">
+              <Button size="lg" asChild className={CTA_CLASS}>
+                <Link to={CTA_TO} data-cta="closing">{CTA_LABEL}</Link>
+              </Button>
             </div>
           </div>
         </section>
