@@ -1,62 +1,54 @@
+import { authService } from './authService';
+import type { GenerationOutput, ToolId } from '../types';
+import type { PackId } from '../config/pricing';
+
+export class ApiError extends Error {
+  code: string;
+  status: number;
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const token = await authService.getIdToken();
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(0, 'NETWORK', 'Connexion impossible. Vérifie ton accès à Internet.');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new ApiError(response.status, data?.error ?? 'UNKNOWN', data?.message ?? 'Une erreur est survenue.');
+  }
+  return data as T;
+}
+
 export interface CheckoutRequest {
-  pack: 'starter' | 'createur' | 'pro';
-  userId: string;
-  email: string;
+  pack: PackId;
   firstName: string;
   lastName: string;
+  country: string;
   phone: string;
 }
 
-export interface GenerateRequest {
-  userId: string;
-  tool: string;
-  params: Record<string, any>;
-}
-
-const parseJsonResponse = async (response: Response) => {
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload?.error || 'Erreur de communication avec le serveur');
-  }
-  return payload;
-};
-
 export const apiService = {
-  initiateCheckout: async (checkoutRequest: CheckoutRequest): Promise<string> => {
-    console.log('🔍 Payload envoyé au backend:', {
-      pack: checkoutRequest.pack,
-      userId: checkoutRequest.userId,
-      email: checkoutRequest.email,
-      firstName: checkoutRequest.firstName,
-      lastName: checkoutRequest.lastName,
-      phone: checkoutRequest.phone,
-    });
-    const response = await fetch('/api/initiate-checkout', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(checkoutRequest),
-    });
-
-    const data = await parseJsonResponse(response);
-    if (!data.checkout_url) {
-      throw new Error(data.error || 'Impossible de récupérer l’URL de paiement');
-    }
-
-    return data.checkout_url;
+  async initiateCheckout(request: CheckoutRequest): Promise<string> {
+    const { checkoutUrl } = await post<{ checkoutUrl: string }>('/api/initiate-checkout', request);
+    return checkoutUrl;
   },
 
-  generateContent: async (generateRequest: GenerateRequest): Promise<any> => {
-    const response = await fetch('/api/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(generateRequest),
+  generate(tool: ToolId, params: Record<string, string>) {
+    return post<{ id: string | null; result: Exclude<GenerationOutput, string>; credits: number }>('/api/generate', {
+      tool,
+      params,
     });
-
-    const data = await parseJsonResponse(response);
-    return data.result;
   },
 };

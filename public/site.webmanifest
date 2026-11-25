@@ -1,0 +1,13 @@
+{
+  "name": "Creator Booster IA",
+  "short_name": "Creator Booster",
+  "lang": "fr",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0A0A14",
+  "theme_color": "#0A0A14",
+  "icons": [
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

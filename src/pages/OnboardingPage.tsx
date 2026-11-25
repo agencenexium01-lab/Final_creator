@@ -1,163 +1,136 @@
-
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'motion/react';
-import { Check, ArrowRight, ArrowLeft, Zap } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
-import { Card } from '@/components/ui/card';
-import { NICHES, PLATFORMS } from '@/config/constants';
-import { useAppStore } from '@/stores/appStore';
-import { authService } from '@/services/authService';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { Logo } from '@/components/brand/Logo';
+import { Field, NativeSelect, TextInput } from '@/components/ui/field';
+import { safeNext } from '@/components/AuthCard';
+import { NICHE_OPTIONS, PLATFORM_OPTIONS, type Platform } from '@/config/ui';
+import { COUNTRIES } from '@/shared/phone.js';
+import { authService } from '@/services/authService';
+import { useAppStore } from '@/stores/appStore';
+import { cn } from '@/lib/utils';
+
+const STEPS = 3;
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
-  const { user, updateProfile } = useAppStore();
+  const [params] = useSearchParams();
+  const user = useAppStore((s) => s.user);
   const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState({
-    name: user?.name || '',
-    niche: '',
-    platform: 'both' as any,
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: user?.name ?? '',
+    country: user?.country ?? 'BJ',
+    niche: user?.niche ?? '',
+    platform: (user?.platform ?? 'both') as Platform,
   });
 
-  const progress = (step / 3) * 100;
+  const nameOk = form.name.trim().length >= 2 && form.name.trim().length <= 50;
+  const canContinue = (step === 1 && nameOk) || (step === 2 && !!form.niche) || step === 3;
 
-  const handleNext = async () => {
-    if (step < 3) {
-      setStep(step + 1);
-    } else {
-      try {
-        const updatedUser = await authService.updateProfile({
-          ...formData,
-          onboarding_completed: true,
-        });
-        updateProfile(updatedUser);
-        toast.success("Espace créateur prêt !");
-        navigate('/dashboard');
-      } catch (error) {
-        toast.error("Une erreur est survenue.");
-      }
+  const finish = async () => {
+    setSaving(true);
+    try {
+      await authService.updateProfile({ ...form, name: form.name.trim(), onboarding_completed: true });
+      navigate(safeNext(params.get('next'), '/tools/calendar'), { replace: true });
+    } catch {
+      toast.error('Enregistrement impossible. Réessaie.');
+      setSaving(false);
     }
   };
 
-  const handleBack = () => {
-    if (step > 1) setStep(step - 1);
-  };
+  const next = () => (step < STEPS ? setStep(step + 1) : finish());
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full -z-10">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[#7C3AED]/10 rounded-full blur-[128px]" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[#06B6D4]/10 rounded-full blur-[128px]" />
-      </div>
-
-      <div className="w-full max-w-2xl">
-        <div className="mb-8 text-center">
-          <div className="flex justify-center mb-4">
-            <Zap className="w-12 h-12 text-[#7C3AED] fill-[#7C3AED]" />
+    <div className="min-h-dvh bg-[#0A0A14] px-4 py-8 text-white">
+      <div className="mx-auto max-w-2xl">
+        <Logo />
+        <div className="mt-10">
+          <p className="text-sm text-[#94A3B8]">Étape {step} sur {STEPS}</p>
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-[#1E1E3A]">
+            <div className="h-full bg-[#7C3AED] transition-[width] duration-300" style={{ width: `${(step / STEPS) * 100}%` }} />
           </div>
-          <h1 className="text-3xl font-bold mb-2">Configure ton espace</h1>
-          <p className="text-[#94A3B8]">Étape {step} sur 3</p>
-          <Progress value={progress} className="h-2 mt-4 bg-[#1E1E3A] [&>div]:bg-gradient-to-r [&>div]:from-[#7C3AED] [&>div]:to-[#06B6D4]" />
         </div>
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={step}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.3 }}
-          >
-            {step === 1 && (
-              <div className="space-y-6">
-                <div className="text-center mb-8">
-                  <h2 className="text-2xl font-bold mb-2">Comment tu t'appelles vraiment ?</h2>
-                  <p className="text-[#94A3B8]">Ton prénom d'affichage dans l'application.</p>
-                </div>
-                <Input 
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Ton prénom"
-                  className="h-14 text-lg bg-[#12121F] border-[#1E1E3A] focus:ring-[#7C3AED] text-center"
-                />
-              </div>
-            )}
+        <main id="contenu" className="mt-10">
+          {step === 1 && (
+            <section className="space-y-6">
+              <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Faisons connaissance</h1>
+              <Field id="name" label="Ton prénom ou nom de créateur">
+                <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoComplete="given-name" maxLength={50} />
+              </Field>
+              <Field id="country" label="Ton pays" hint="L’IA utilisera des références que ton public reconnaît.">
+                <NativeSelect value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })}>
+                  {COUNTRIES.map((c) => <option key={c.iso} value={c.iso}>{c.name}</option>)}
+                </NativeSelect>
+              </Field>
+            </section>
+          )}
 
-            {step === 2 && (
-              <div className="space-y-6">
-                <div className="text-center mb-8">
-                  <h2 className="text-2xl font-bold mb-2">Dans quel domaine tu crées du contenu ?</h2>
-                  <p className="text-[#94A3B8]">Cela aide l'IA à comprendre ton audience.</p>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {NICHES.map((niche) => (
-                    <Card 
-                      key={niche.id}
-                      onClick={() => setFormData({ ...formData, niche: niche.id })}
-                      className={`p-6 cursor-pointer transition-all border-2 hover:border-[#7C3AED]/50 ${
-                        formData.niche === niche.id ? 'bg-[#7C3AED]/10 border-[#7C3AED]' : 'bg-[#12121F] border-[#1E1E3A]'
-                      }`}
-                    >
-                      <div className="text-3xl mb-3">{niche.icon}</div>
-                      <h3 className="font-bold text-sm">{niche.label}</h3>
-                    </Card>
-                  ))}
-                </div>
+          {step === 2 && (
+            <section>
+              <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Dans quel domaine tu crées ?</h1>
+              <p className="mt-2 text-[#94A3B8]">Tu pourras écrire une niche plus précise dans chaque outil.</p>
+              <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Niche">
+                {NICHE_OPTIONS.map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={form.niche === id}
+                    onClick={() => setForm({ ...form, niche: id })}
+                    className={cn(
+                      'flex min-h-14 items-center gap-3 rounded-xl border px-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]',
+                      form.niche === id ? 'border-[#7C3AED] bg-[#17142B] text-white' : 'border-[#1E1E3A] bg-[#12121F] text-[#CBD5E1] hover:border-[#2D2D5E]',
+                    )}
+                  >
+                    <Icon className="h-4 w-4 shrink-0 text-[#94A3B8]" aria-hidden="true" />
+                    {label}
+                  </button>
+                ))}
               </div>
-            )}
+            </section>
+          )}
 
-            {step === 3 && (
-              <div className="space-y-6">
-                <div className="text-center mb-8">
-                  <h2 className="text-2xl font-bold mb-2">Sur quelle plateforme tu publies principalement ?</h2>
-                  <p className="text-[#94A3B8]">L'IA adaptera le style et le format de chaque contenu.</p>
-                </div>
-                <div className="grid grid-cols-1 gap-4">
-                  {PLATFORMS.map((platform) => (
-                    <Card 
-                      key={platform.id}
-                      onClick={() => setFormData({ ...formData, platform: platform.id })}
-                      className={`p-6 cursor-pointer transition-all border-2 flex items-center gap-6 hover:border-[#7C3AED]/50 ${
-                        formData.platform === platform.id ? 'bg-[#7C3AED]/10 border-[#7C3AED]' : 'bg-[#12121F] border-[#1E1E3A]'
-                      }`}
-                    >
-                      <div className="text-4xl">{platform.icon}</div>
-                      <div className="text-left">
-                        <h3 className="font-bold text-lg">{platform.label}</h3>
-                        <p className="text-sm text-[#94A3B8]">{platform.description}</p>
-                      </div>
-                      {formData.platform === platform.id && (
-                        <div className="ml-auto bg-[#7C3AED] rounded-full p-1">
-                          <Check className="w-4 h-4 text-white" />
-                        </div>
-                      )}
-                    </Card>
-                  ))}
-                </div>
+          {step === 3 && (
+            <section>
+              <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Où publies-tu surtout ?</h1>
+              <div className="mt-6 space-y-2" role="radiogroup" aria-label="Plateforme">
+                {PLATFORM_OPTIONS.map(({ id, label, description, icon: Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={form.platform === id}
+                    onClick={() => setForm({ ...form, platform: id })}
+                    className={cn(
+                      'flex w-full items-center gap-4 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]',
+                      form.platform === id ? 'border-[#7C3AED] bg-[#17142B]' : 'border-[#1E1E3A] bg-[#12121F] hover:border-[#2D2D5E]',
+                    )}
+                  >
+                    <Icon className="h-5 w-5 shrink-0 text-[#94A3B8]" aria-hidden="true" />
+                    <span className="flex-1">
+                      <span className="block font-medium text-white">{label}</span>
+                      <span className="block text-sm text-[#94A3B8]">{description}</span>
+                    </span>
+                    {form.platform === id && <Check className="h-5 w-5 text-[#A78BFA]" aria-hidden="true" />}
+                  </button>
+                ))}
               </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
+            </section>
+          )}
+        </main>
 
-        <div className="mt-12 flex items-center justify-between gap-4">
-          <Button 
-            variant="ghost" 
-            onClick={handleBack}
-            disabled={step === 1}
-            className="text-[#94A3B8] hover:text-[#F1F5F9]"
-          >
-            <ArrowLeft className="w-5 h-5 mr-2" /> Retour
-          </Button>
-          <Button 
-            onClick={handleNext}
-            disabled={(step === 1 && !formData.name) || (step === 2 && !formData.niche)}
-            className="bg-gradient-to-r from-[#7C3AED] to-[#06B6D4] hover:opacity-90 text-white border-none h-12 px-8 rounded-xl"
-          >
-            {step === 3 ? "Lancer mon espace créateur" : "Continuer"} <ArrowRight className="w-5 h-5 ml-2" />
-          </Button>
+        <div className="mt-10 flex items-center justify-between gap-4">
+          <button type="button" onClick={() => setStep(step - 1)} disabled={step === 1} className="inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-[#94A3B8] hover:text-white disabled:invisible">
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Retour
+          </button>
+          <button type="button" onClick={next} disabled={!canContinue || saving} className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-[#7C3AED] px-6 font-medium text-white hover:bg-[#6D28D9] disabled:opacity-50">
+            {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            {step === STEPS ? 'Ouvrir mon espace' : 'Continuer'}
+            {!saving && <ArrowRight className="h-4 w-4" aria-hidden="true" />}
+          </button>
         </div>
       </div>
     </div>

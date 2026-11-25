@@ -1,36 +1,20 @@
-
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { UserProfile, Platform } from '../types';
+import type { UserProfile } from '../types';
+
+type AuthStatus = 'loading' | 'signedOut' | 'signedIn';
 
 interface AppState {
+  status: AuthStatus;
   user: UserProfile | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
   setUser: (user: UserProfile | null) => void;
-  setAuthenticated: (status: boolean) => void;
-  setLoading: (status: boolean) => void;
-  updateProfile: (updates: Partial<UserProfile>) => void;
-  clearUser: () => void;
+  patchUser: (updates: Partial<UserProfile>) => void;
 }
 
-export const useAppStore = create<AppState>()(
-  persist(
-    (set) => ({
-      user: null,
-      isAuthenticated: false,
-      isLoading: false,
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
-      setAuthenticated: (status) => set({ isAuthenticated: status }),
-      setLoading: (status) => set({ isLoading: status }),
-      updateProfile: (updates) =>
-        set((state) => ({
-          user: state.user ? { ...state.user, ...updates } : null,
-        })),
-      clearUser: () => set({ user: null, isAuthenticated: false }),
-    }),
-    {
-      name: 'creator-booster-storage',
-    }
-  )
-);
+// Pas de persistance locale : le profil (et donc le solde) vient toujours de Firestore,
+// en temps réel. Un solde affiché ne peut pas être périmé.
+export const useAppStore = create<AppState>()((set) => ({
+  status: 'loading',
+  user: null,
+  setUser: (user) => set({ user, status: user ? 'signedIn' : 'signedOut' }),
+  patchUser: (updates) => set((s) => ({ user: s.user ? { ...s.user, ...updates } : null })),
+}));

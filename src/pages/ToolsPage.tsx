@@ -1,557 +1,273 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Zap, PenTool, Lightbulb, Calendar as CalendarIcon, 
-  Loader2, Copy, Check, Download, 
-  ArrowLeft, Star, AlertCircle, Edit3
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import Sidebar from '@/components/layout/Sidebar';
-import { useAppStore } from '@/stores/appStore';
-import { creditService } from '@/services/creditService';
-import { authService } from '@/services/authService';
-import { apiService } from '@/services/api';
-import { NICHES } from '@/config/constants';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, Navigate, NavLink, useLocation, useParams } from 'react-router-dom';
+import { Loader2, Wallet } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { jsPDF } from 'jspdf';
+import { AppShell } from '@/components/layout/AppShell';
+import { Field, NativeSelect, TextArea, TextInput } from '@/components/ui/field';
+import { GenerationView, type ScriptPrefill } from '@/components/generation/GenerationView';
+import { NICHE_OPTIONS, PLATFORM_OPTIONS, TOOLS, getTool, plural, type Platform, type ToolId } from '@/config/ui';
+import { DURATIONS, TONES } from '@/shared/catalog.js';
+import { FIELD_LIMITS } from '@/shared/generation.js';
+import { apiService, ApiError } from '@/services/api';
+import { useAppStore } from '@/stores/appStore';
+import type { GenerationOutput } from '@/types';
+import { cn } from '@/lib/utils';
+
+const CUSTOM = '__custom__';
+
+interface FormState {
+  niche: string;
+  customNiche: string;
+  platform: Platform;
+  tone: string;
+  topic: string;
+  hook: string;
+  message: string;
+  duration: string;
+}
+
+const TOPIC_LABEL: Partial<Record<ToolId, { label: string; placeholder: string }>> = {
+  hooks: { label: 'Sujet de la vidéo', placeholder: 'Ex. comment j’ai trouvé mes 10 premiers clients' },
+  script: { label: 'Sujet', placeholder: 'Ex. le vrai prix d’un jus fait maison' },
+  ideas: { label: 'Thème', placeholder: 'Ex. la rentrée scolaire, la Saint-Valentin' },
+};
 
 export default function ToolsPage() {
   const { toolId } = useParams<{ toolId: string }>();
-  const navigate = useNavigate();
-  const { user, updateProfile } = useAppStore();
-  const [isLoading, setIsLoading] = useState(false);
-  const [results, setResults] = useState<any>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [isCustomNiche, setIsCustomNiche] = useState(false);
+  const tool = getTool(toolId);
+  const location = useLocation();
+  const user = useAppStore((s) => s.user);
+  const patchUser = useAppStore((s) => s.patchUser);
+  const resultRef = useRef<HTMLDivElement>(null);
 
-  const creditCost = creditService.getCost(toolId as any);
+  const initialNiche = user?.niche ?? '';
+  const nicheIsListed = !initialNiche || NICHE_OPTIONS.some((n) => n.id === initialNiche);
 
-  const [formData, setFormData] = useState<{
-    niche: string;
-    platform: string;
-    topic: string;
-    tone: string;
-    hook: string;
-    message: string;
-    goal: string;
-    duration: string;
-    angles: string[];
-    intensity: string;
-  }>({
-    niche: (user?.niche ?? '') as string,
-    platform: (user?.platform ?? 'both') as string,
+  const [form, setForm] = useState<FormState>(() => ({
+    niche: nicheIsListed ? initialNiche : CUSTOM,
+    customNiche: nicheIsListed ? '' : initialNiche,
+    platform: user?.platform ?? 'both',
+    tone: TONES[0],
     topic: '',
-    tone: 'Motivationnel',
     hook: '',
     message: '',
-    goal: 'Inspirer et motiver',
     duration: '60 sec',
-    angles: [],
-    intensity: '1 contenu/jour',
-  });
+  }));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<GenerationOutput | null>(null);
 
+  // Pré-remplissage depuis un jour du calendrier ou une idée.
   useEffect(() => {
-    setResults(null);
-  }, [toolId]);
-
-  const [showBlockedModal, setShowBlockedModal] = useState(false);
-
-  const handleGenerate = async () => {
-    if (isLoading) return;
-
-    if (!user) {
-      toast.error('Utilisateur non trouvé.');
-      return;
+    const prefill = (location.state as { prefill?: ScriptPrefill } | null)?.prefill;
+    setResult(null);
+    setError('');
+    if (prefill) {
+      setForm((f) => ({
+        ...f,
+        hook: prefill.hook ?? f.hook,
+        topic: prefill.topic ?? f.topic,
+        platform: prefill.platform === 'facebook' || prefill.platform === 'tiktok' ? prefill.platform : f.platform,
+      }));
     }
+  }, [toolId, location.state]);
 
-    const hasCredits = creditService.hasEnoughCredits(user.credits, toolId as any);
-    if (!hasCredits) {
-      if (user.credits <= 0) {
-        setShowBlockedModal(true);
-        return;
-      }
+  const credits = user?.credits ?? 0;
+  const enough = tool ? credits >= tool.cost : false;
+  const niche = form.niche === CUSTOM ? form.customNiche.trim() : form.niche;
 
-      toast.error(`Crédits insuffisants. Vous avez besoin de ${creditCost} crédit(s).`, {
-        duration: 5000,
-      });
-      return;
+  const params = useMemo(() => {
+    if (!tool) return {};
+    const p: Record<string, string> = { niche, platform: form.platform, tone: form.tone };
+    if (tool.id !== 'calendar') p.topic = form.topic;
+    if (tool.id === 'script') {
+      p.hook = form.hook;
+      p.duration = form.duration;
     }
+    if (tool.id === 'script' || tool.id === 'ideas' || tool.id === 'calendar') p.message = form.message;
+    return p;
+  }, [tool, niche, form]);
 
-    setIsLoading(true);
+  if (!tool) return <Navigate to="/dashboard" replace />;
+
+  const set = <K extends keyof FormState>(key: K) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const generate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loading || !enough) return;
+    setLoading(true);
+    setError('');
+    setResult(null);
     try {
-      const data = await apiService.generateContent({
-        userId: user.id,
-        tool: toolId as string,
-        params: formData,
-      });
-      setResults(data);
-
-      const updatedUser = await authService.getProfile();
-      if (updatedUser) {
-        updateProfile({ credits: updatedUser.credits });
-      }
-
-      toast.success(`Génération terminée ! ${creditCost} crédit(s) déduit(s).`);
-    } catch (error: any) {
-      console.error('Generate API Error:', error);
-      if (error?.message === 'INSUFFICIENT_CREDITS') {
-        toast.error('Crédits insuffisants. Rechargez votre compte.');
-      } else {
-        toast.error(error?.message || 'Erreur lors de la génération.');
-      }
+      const res = await apiService.generate(tool.id, params);
+      setResult(res.result);
+      patchUser({ credits: res.credits });
+      toast.success(`C’est prêt. ${plural(tool.cost, 'crédit')} utilisé${tool.cost > 1 ? 's' : ''}.`);
+      requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'La génération a échoué. Réessaie dans un instant.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const closeBlockedModal = () => {
-    setShowBlockedModal(false);
-    navigate('/pricing');
-  };
-
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    toast.success("Copié !");
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const exportToPDF = () => {
-    const calendarText = getRawCalendarText();
-    if (!calendarText) {
-      toast.error("Aucun contenu à exporter.");
-      return;
-    }
-    
-    setIsLoading(true);
-    try {
-      // 1. Initialiser jsPDF en format A4 standard
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      
-      // 2. Configurer une police propre et lisible pour du texte structuré
-      pdf.setFont("courier", "normal");
-      pdf.setFontSize(10);
-      pdf.setTextColor(20, 20, 20); // Texte sombre pour l'impression sur fond blanc
-      
-      // 3. Découper le texte automatiquement pour qu'il ne dépasse pas de la page A4 (largeur max ~180mm)
-      const splitText = pdf.splitTextToSize(calendarText, 180);
-      
-      // 4. Gérer la pagination automatique si le calendrier fait plusieurs pages
-      let y = 15; // Marge du haut initiale
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      
-      // Titre du document
-      pdf.setFont("courier", "bold");
-      pdf.setFontSize(14);
-      pdf.text(`Calendrier de Contenu - Niche: ${formData.niche || 'Personnalisee'}`, 15, y);
-      y += 10;
-      
-      pdf.setFont("courier", "normal");
-      pdf.setFontSize(10);
-      
-      for (let i = 0; i < splitText.length; i++) {
-        if (y > pageHeight - 15) { // Si on arrive en bas de page, on crée une nouvelle page
-          pdf.addPage();
-          y = 15; // Reset de la marge du haut sur la nouvelle page
-        }
-        pdf.text(splitText[i], 15, y);
-        y += 6; // Hauteur de ligne (interligne de 6mm)
-      }
-      
-      // 5. Sauvegarder le fichier
-      pdf.save(`calendrier-30-jours-${formData.niche || 'personnalise'}.pdf`);
-      toast.success("PDF téléchargé avec succès !");
-    } catch (error) {
-      console.error(error);
-      toast.error("Erreur lors de la génération du PDF textuel.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const toolInfo = {
-    hooks: { title: 'Hooks Viraux', icon: PenTool, desc: 'Génère des accroches qui stoppent le scroll.' },
-    script: { title: 'Scripts Vidéo', icon: PenTool, desc: 'Des scripts structurés pour TikTok et Facebook.' },
-    ideas: { title: 'Banque d\'Idées', icon: Lightbulb, desc: 'Des idées de contenus originaux pour ta niche.' },
-    calendar: { title: 'Calendrier 30 Jours', icon: CalendarIcon, desc: 'Ton plan d\'action complet pour le mois.' },
-  }[toolId as string] || { title: 'Outil', icon: Zap, desc: '' };
-
-  // Helper pour extraire le texte ou les objets de calendrier
-  const getRawCalendarText = () => {
-    if (!results) return '';
-    if (typeof results === 'string') return results;
-    if (results.result && typeof results.result === 'string') return results.result;
-    if (results.outputData && typeof results.outputData === 'string') return results.outputData;
-    return JSON.stringify(results);
-  };
+  const topic = TOPIC_LABEL[tool.id];
 
   return (
-    <div className="flex min-h-screen bg-[#0A0A14]">
-      <Sidebar />
-      
-      <main className="flex-1 p-4 md:p-8 overflow-y-auto text-white">
-        <div className="max-w-5xl mx-auto space-y-8">
-          {/* Header */}
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/dashboard')} className="md:hidden">
-              <ArrowLeft className="w-6 h-6" />
-            </Button>
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <toolInfo.icon className="w-6 h-6 text-[#7C3AED]" />
-                <h1 className="text-2xl font-bold">{toolInfo.title}</h1>
+    <AppShell>
+      <div className="mx-auto max-w-6xl">
+        <nav aria-label="Outils" className="-mx-4 mb-6 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0">
+          {TOOLS.map((t) => (
+            <NavLink
+              key={t.id}
+              to={`/tools/${t.id}`}
+              className={({ isActive }) =>
+                cn(
+                  'inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm transition-colors',
+                  isActive ? 'border-[#7C3AED] bg-[#17142B] text-white' : 'border-[#1E1E3A] text-[#94A3B8] hover:text-white',
+                )
+              }
+            >
+              <t.icon className="h-4 w-4" aria-hidden="true" />
+              {t.short}
+              <span className="tabular-nums text-xs text-[#64748B]">{t.cost}</span>
+            </NavLink>
+          ))}
+        </nav>
+
+        <header className="mb-6">
+          <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">{tool.title}</h1>
+          <p className="mt-1 text-[#94A3B8]">{tool.description}</p>
+        </header>
+
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)]">
+          <form onSubmit={generate} className="h-fit space-y-4 rounded-2xl border border-[#1E1E3A] bg-[#12121F] p-5 lg:sticky lg:top-6">
+            <Field id="niche" label="Niche">
+              <NativeSelect value={form.niche} onChange={set('niche')}>
+                <option value="">Généraliste</option>
+                {NICHE_OPTIONS.map((n) => (
+                  <option key={n.id} value={n.id}>{n.label}</option>
+                ))}
+                <option value={CUSTOM}>Autre (je l’écris)</option>
+              </NativeSelect>
+            </Field>
+            {form.niche === CUSTOM && (
+              <Field id="customNiche" label="Ta niche">
+                <TextInput value={form.customNiche} onChange={set('customNiche')} maxLength={FIELD_LIMITS.niche} placeholder="Ex. coiffure afro à Abidjan" />
+              </Field>
+            )}
+
+            <fieldset>
+              <legend className="mb-1.5 text-sm font-medium text-white">Plateforme</legend>
+              <div className="grid grid-cols-3 gap-2">
+                {PLATFORM_OPTIONS.map((p) => (
+                  <label
+                    key={p.id}
+                    className={cn(
+                      'flex min-h-11 cursor-pointer items-center justify-center rounded-lg border text-sm transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[#7C3AED]',
+                      form.platform === p.id ? 'border-[#7C3AED] bg-[#17142B] text-white' : 'border-[#2D2D5E] text-[#94A3B8] hover:text-white',
+                    )}
+                  >
+                    <input type="radio" name="platform" value={p.id} checked={form.platform === p.id} onChange={() => setForm((f) => ({ ...f, platform: p.id }))} className="sr-only" />
+                    {p.label}
+                  </label>
+                ))}
               </div>
-              <p className="text-[#94A3B8] text-sm">{toolInfo.desc}</p>
-            </div>
-          </div>
+            </fieldset>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* Form Column */}
-            <div className="lg:col-span-4 space-y-6">
-              <Card className="bg-[#12121F] border-[#1E1E3A]">
-                <CardContent className="p-6 space-y-4">
-                  
-                  {/* Niche Selection */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-[#94A3B8] uppercase">Niche</label>
-                      <Button 
-                        variant="link" 
-                        size="sm" 
-                        className="text-xs text-[#7C3AED] p-0 h-auto"
-                        onClick={() => {
-                          setIsCustomNiche(!isCustomNiche);
-                          setFormData({ ...formData, niche: '' });
-                        }}
-                      >
-                        {isCustomNiche ? "Choisir dans la liste" : "Écrire ma propre niche"}
-                      </Button>
-                    </div>
-                    
-                    {isCustomNiche ? (
-                      <Input 
-                        value={formData.niche}
-                        onChange={(e) => setFormData({ ...formData, niche: e.target.value })}
-                        placeholder="Ex: Pâtisserie végane, Domotique..."
-                        className="bg-[#1A1A2E] border-[#2D2D5E] text-white h-10"
-                      />
-                    ) : (
-                      <Select value={formData.niche} onValueChange={(v: string | null) => setFormData({ ...formData, niche: v ?? '' })}>
-                        <SelectTrigger className="bg-[#1A1A2E] border-[#2D2D5E] text-white">
-                          <SelectValue placeholder="Choisir une niche" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-[#12121F] border-[#1E1E3A] text-white">
-                          {NICHES.map(n => <SelectItem key={n.id} value={n.id}>{n.icon} {n.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
+            <Field id="tone" label="Ton">
+              <NativeSelect value={form.tone} onChange={set('tone')}>
+                {TONES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </NativeSelect>
+            </Field>
 
-                  {/* Platform Selection */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-[#94A3B8] uppercase">Plateforme</label>
-                    <div className="flex gap-2">
-                      {['tiktok', 'facebook', 'both'].map((p) => (
-                        <Button
-                          key={p}
-                          variant={formData.platform === p ? 'default' : 'outline'}
-                          onClick={() => setFormData({ ...formData, platform: p as any })}
-                          className={`flex-1 h-10 rounded-lg capitalize ${
-                            formData.platform === p ? 'bg-[#7C3AED] hover:bg-[#7C3AED]/90' : 'border-[#2D2D5E] hover:bg-[#1E1E3A] text-white'
-                          }`}
-                        >
-                          {p === 'both' ? 'Les deux' : p}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
+            {tool.id === 'script' && (
+              <Field id="hook" label="Hook de départ" optional hint="Colle un hook, ou laisse vide pour que l’IA l’écrive.">
+                <TextArea value={form.hook} onChange={set('hook')} maxLength={FIELD_LIMITS.hook} rows={2} />
+              </Field>
+            )}
 
-                  {/* Global Tone Selection (Accessible to all tools) */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-[#94A3B8] uppercase">Ton du contenu</label>
-                    <Select value={formData.tone} onValueChange={(v: string | null) => setFormData({ ...formData, tone: v ?? 'Motivationnel' })}>
-                      <SelectTrigger className="bg-[#1A1A2E] border-[#2D2D5E] text-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#12121F] border-[#1E1E3A] text-white">
-                        {['Motivationnel', 'Controversé', 'Éducatif', 'Storytelling', 'Drôle', 'Provocateur', 'Professionnel'].map(t => (
-                          <SelectItem key={t} value={t}>{t}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+            {topic && (
+              <Field id="topic" label={topic.label} optional>
+                <TextInput value={form.topic} onChange={set('topic')} maxLength={FIELD_LIMITS.topic} placeholder={topic.placeholder} />
+              </Field>
+            )}
 
-                  {/* Hooks Specific Inputs */}
-                  {toolId === 'hooks' && (
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-[#94A3B8] uppercase">Sujet spécifique</label>
-                      <Textarea 
-                        value={formData.topic}
-                        onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
-                        placeholder="Ex: comment j'ai gagné mon premier client..."
-                        className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[80px] text-white"
-                      />
-                    </div>
-                  )}
+            {tool.id === 'script' && form.platform !== 'facebook' && (
+              <Field id="duration" label="Durée de la vidéo">
+                <NativeSelect value={form.duration} onChange={set('duration')}>
+                  {DURATIONS.map((d) => <option key={d} value={d}>{d.replace('sec', 'secondes')}</option>)}
+                </NativeSelect>
+              </Field>
+            )}
 
-                  {/* Scripts Specific Inputs */}
-                  {toolId === 'script' && (
-                    <>
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-[#94A3B8] uppercase">Hook de départ</label>
-                        <Textarea 
-                          value={formData.hook}
-                          onChange={(e) => setFormData({ ...formData, hook: e.target.value })}
-                          placeholder="Copie un hook ici ou laisse vide..."
-                          className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[80px] text-white"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-[#94A3B8] uppercase">Message principal</label>
-                        <Textarea 
-                          value={formData.message}
-                          onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                          placeholder="Ce que tu veux transmettre..."
-                          className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[80px] text-white"
-                        />
-                      </div>
-                    </>
-                  )}
+            {(tool.id === 'script' || tool.id === 'ideas' || tool.id === 'calendar') && (
+              <Field
+                id="message"
+                label={tool.id === 'script' ? 'Message principal' : 'Ton contexte'}
+                optional
+                hint={tool.id === 'script' ? 'Ce que la vidéo doit faire comprendre.' : 'Ton offre, ta cible, ce que tu veux mettre en avant ce mois-ci.'}
+              >
+                <TextArea value={form.message} onChange={set('message')} maxLength={FIELD_LIMITS.message} rows={3} />
+              </Field>
+            )}
 
-                  {/* Ideas and Calendar Specific Inputs */}
-                  {(toolId === 'ideas' || toolId === 'calendar') && (
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-[#94A3B8] uppercase">Instructions ou contexte client</label>
-                      <Textarea 
-                        value={formData.message}
-                        onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                        placeholder="Donne plus de détails sur tes attentes, ton offre, ta cible ou le type de contenu voulu..."
-                        className="bg-[#1A1A2E] border-[#2D2D5E] min-h-[100px] text-white"
-                      />
-                    </div>
-                  )}
-
-                  {/* Credits Info */}
-                  <div className="p-4 bg-[#1A1A2E] border border-[#2D2D5E] rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-bold text-[#94A3B8] uppercase">Coût de génération</p>
-                      <Badge variant="outline" className="bg-[#7C3AED]/20 border-[#7C3AED] text-[#7C3AED]">
-                        {creditCost} crédit{creditCost > 1 ? 's' : ''}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-[#94A3B8]">Votre solde</p>
-                      <p className="text-lg font-bold text-[#06B6D4]">{user?.credits || 0}</p>
-                    </div>
-                  </div>
-
-                  <Button 
-                    onClick={handleGenerate} 
-                    disabled={isLoading || !creditService.hasEnoughCredits(user?.credits || 0, toolId as any)}
-                    className="w-full bg-gradient-to-r from-[#7C3AED] to-[#06B6D4] hover:opacity-90 text-white border-none h-12 rounded-xl mt-4 disabled:opacity-50"
-                  >
-                    {isLoading ? (
-                      <><Loader2 className="w-5 h-5 animate-spin mr-2" /> Génération...</>
-                    ) : !creditService.hasEnoughCredits(user?.credits || 0, toolId as any) ? (
-                      <><AlertCircle className="w-5 h-5 mr-2" /> Crédits insuffisants</>
-                    ) : (
-                      <><Zap className="w-5 h-5 mr-2 fill-current" /> Générer ⚡</>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
+            <div className="flex items-center justify-between rounded-lg border border-[#1E1E3A] px-3 py-2 text-sm">
+              <span className="text-[#94A3B8]">Coût</span>
+              <span className="tabular-nums text-white">{plural(tool.cost, 'crédit')} · solde {credits}</span>
             </div>
 
-            {/* Results Column */}
-            <div className="lg:col-span-8 space-y-6">
-              <AnimatePresence mode="wait">
-                {!results && !isLoading && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="h-full flex flex-col items-center justify-center text-center p-12 border-2 border-dashed border-[#1E1E3A] rounded-2xl"
-                  >
-                    <div className="w-16 h-16 rounded-full bg-[#12121F] flex items-center justify-center mb-6">
-                      <toolInfo.icon className="w-8 h-8 text-[#94A3B8]" />
-                    </div>
-                    <h3 className="text-xl font-bold mb-2">Prêt à créer ?</h3>
-                    <p className="text-[#94A3B8] max-w-xs">
-                      Remplis le formulaire à gauche et laisse l'IA booster ton contenu.
-                    </p>
-                  </motion.div>
-                )}
+            {enough ? (
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#7C3AED] font-medium text-white transition-colors hover:bg-[#6D28D9] disabled:opacity-60"
+              >
+                {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                {loading ? 'Génération en cours…' : `Générer (${plural(tool.cost, 'crédit')})`}
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-[#94A3B8]">
+                  Il te manque {plural(tool.cost - credits, 'crédit')} pour cet outil.
+                </p>
+                <Link to="/pricing" className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-white font-medium text-[#0A0A14] hover:bg-[#E2E8F0]">
+                  <Wallet className="h-4 w-4" aria-hidden="true" /> Recharger mes crédits
+                </Link>
+              </div>
+            )}
+          </form>
 
-                {isLoading && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="space-y-4"
-                  >
-                    {[1, 2, 3].map(i => (
-                      <Card key={i} className="bg-[#12121F] border-[#1E1E3A] animate-pulse">
-                        <CardContent className="p-6 space-y-4">
-                          <div className="h-4 bg-[#1E1E3A] rounded w-3/4" />
-                          <div className="h-4 bg-[#1E1E3A] rounded w-1/2" />
-                          <div className="h-20 bg-[#1E1E3A] rounded w-full" />
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </motion.div>
-                )}
-
-                {results && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="space-y-6"
-                  >
-                    {/* Render Hooks */}
-                    {toolId === 'hooks' && results.hooks?.map((hook: any, i: number) => (
-                      <Card key={i} className="bg-[#12121F] border-[#1E1E3A] hover:border-[#7C3AED]/30 transition-all">
-                        <CardContent className="p-6">
-                          <div className="flex items-start justify-between gap-4 mb-4">
-                            <div className="flex flex-wrap gap-2">
-                              <Badge variant="secondary" className="bg-[#7C3AED]/10 text-[#7C3AED] border-none">{hook.framework}</Badge>
-                              <Badge variant="outline" className="border-[#1E1E3A] text-[#94A3B8]">{hook.platform}</Badge>
-                            </div>
-                            <div className="flex items-center gap-1 text-[#F59E0B]">
-                              <Star className="w-4 h-4 fill-current" />
-                              <span className="font-bold">{hook.score}/10</span>
-                            </div>
-                          </div>
-                          <p className="text-lg font-medium mb-4 leading-relaxed">{hook.hook}</p>
-                          <p className="text-sm text-[#94A3B8] italic mb-6">"{hook.justification}"</p>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => copyToClipboard(hook.hook, `hook-${i}`)}
-                            className="bg-[#1A1A2E] border-[#2D2D5E] hover:bg-[#1E1E3A] text-white"
-                          >
-                            {copiedId === `hook-${i}` ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                            Copier
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    ))}
-
-                    {/* Render Scripts */}
-                    {toolId === 'script' && (
-                      <Card className="bg-[#12121F] border-[#1E1E3A]">
-                        <CardHeader className="border-b border-[#1E1E3A]">
-                          <CardTitle className="text-white">Script {results.platform}</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-6 space-y-6">
-                          {results.sections?.map((section: any) => (
-                            <div key={section.id} className="space-y-2">
-                              <h4 className="text-xs font-bold text-[#7C3AED] uppercase tracking-widest">{section.label}</h4>
-                              <div className="p-4 rounded-xl bg-[#1A1A2E] border border-[#2D2D5E]">
-                                <p className="whitespace-pre-wrap leading-relaxed text-white">{section.content}</p>
-                                {section.visual_note && (
-                                  <p className="mt-3 text-xs text-[#06B6D4] italic">Note: {section.visual_note}</p>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </CardContent>
-                      </Card>
-                    )}
-
-                    {/* Render Ideas Bank */}
-                    {toolId === 'ideas' && (
-                      <div className="space-y-4">
-                        <h2 className="text-lg font-bold text-[#F59E0B] flex items-center gap-2">
-                          <Lightbulb className="w-5 h-5" /> Banque d'idées générée
-                        </h2>
-                        {(results.ideas || (Array.isArray(results) ? results : [])).map((idea: any, idx: number) => (
-                          <Card key={idx} className="bg-[#12121F] border-[#1E1E3A]">
-                            <CardContent className="p-5 flex justify-between items-start gap-4">
-                              <div className="space-y-1">
-                                <h4 className="font-bold text-white text-base">{idea.title}</h4>
-                                <p className="text-sm text-gray-300 leading-relaxed">{idea.description}</p>
-                                {idea.format && <Badge className="mt-2 bg-[#1A1A2E] text-[#F59E0B] border-[#F59E0B]/20">{idea.format}</Badge>}
-                              </div>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="text-gray-400 hover:text-white"
-                                onClick={() => copyToClipboard(`${idea.title}\n${idea.description}`, `idea-${idx}`)}
-                              >
-                                {copiedId === `idea-${idx}` ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                              </Button>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Render 30-Day Calendar */}
-                    {toolId === 'calendar' && (
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-center">
-                          <h2 className="text-lg font-bold text-[#10B981] flex items-center gap-2">
-                            <CalendarIcon className="w-5 h-5" /> Votre Plan d'action 30 Jours
-                          </h2>
-                          <Button 
-                            onClick={exportToPDF} 
-                            disabled={isLoading}
-                            className="bg-[#10B981] hover:bg-[#0f9f6e] text-white flex items-center gap-2 text-xs"
-                          >
-                            <Download className="w-4 h-4" /> Exporter en PDF
-                          </Button>
-                        </div>
-                        
-                        <Card id="calendar-printable-area" className="bg-[#12121F] border-[#1E1E3A] p-6 relative">
-                          <div className="absolute top-4 right-4">
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="text-gray-400 hover:text-white"
-                              onClick={() => copyToClipboard(getRawCalendarText(), 'cal-raw')}
-                            >
-                              {copiedId === 'cal-raw' ? <Check className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
-                              Tout copier
-                            </Button>
-                          </div>
-                          <pre className="whitespace-pre-wrap font-sans text-gray-200 leading-relaxed text-sm bg-[#0A0A14] p-5 rounded-xl border border-[#1E1E3A] mt-6">
-                            {getRawCalendarText()}
-                          </pre>
-                        </Card>
-                      </div>
-                    )}
-
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <Dialog open={showBlockedModal} onOpenChange={setShowBlockedModal}>
-                <DialogContent className="bg-[#0b1220] border border-[#1e293b]">
-                  <DialogHeader>
-                    <DialogTitle>Crédits insuffisants</DialogTitle>
-                    <DialogDescription>
-                      Votre solde est à zéro et vous ne pouvez pas générer de contenu pour le moment.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="mt-4 space-y-3 text-sm text-[#cbd5e1]">
-                    <p>Rechargez votre compte pour continuer à utiliser les outils IA.</p>
-                  </div>
-                  <DialogFooter>
-                    <Button onClick={closeBlockedModal} className="bg-[#7c3aed] hover:bg-[#6d28d9] text-white">
-                      Aller à la page des tarifs
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </div>
+          <section ref={resultRef} aria-live="polite" aria-busy={loading} className="min-w-0 scroll-mt-20">
+            {error && (
+              <p role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">
+                {error}
+              </p>
+            )}
+            {loading ? (
+              <div className="space-y-3">
+                <p className="text-sm text-[#94A3B8]">
+                  L’IA écrit ton contenu. {tool.id === 'calendar' ? 'Le calendrier prend 20 à 40 secondes.' : 'Compte 10 à 20 secondes.'}
+                </p>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="h-28 animate-pulse rounded-xl border border-[#1E1E3A] bg-[#12121F]" />
+                ))}
+              </div>
+            ) : result ? (
+              <GenerationView tool={tool.id} output={result} pdfTitle={`Calendrier 30 jours${niche ? ` - ${niche}` : ''}`} />
+            ) : (
+              <div className="grid min-h-64 place-items-center rounded-2xl border border-dashed border-[#2D2D5E] p-8 text-center">
+                <div>
+                  <tool.icon className="mx-auto h-6 w-6 text-[#64748B]" aria-hidden="true" />
+                  <p className="mt-3 text-white">Le résultat s’affichera ici.</p>
+                  <p className="mt-1 text-sm text-[#94A3B8]">Tout est enregistré dans ton historique.</p>
+                </div>
+              </div>
+            )}
+          </section>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

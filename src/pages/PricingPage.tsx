@@ -1,174 +1,172 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Zap } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import Sidebar from '@/components/layout/Sidebar';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Loader2, Lock } from 'lucide-react';
+import { SiteLayout, PageHeader } from '@/components/layout/SiteLayout';
+import { PricingCards } from '@/components/PricingCards';
+import { Field, NativeSelect, TextInput } from '@/components/ui/field';
+import { MONTH_PLAN, PACKS, TOOL_COSTS, formatFcfa, getPack, type PackId } from '@/config/pricing';
+import { COUNTRIES, normalizePhone } from '@/shared/phone.js';
+import { apiService, ApiError } from '@/services/api';
 import { useAppStore } from '@/stores/appStore';
+import { TOOLS, plural } from '@/config/ui';
 
-// Type strict pour les identifiants de pack
-type PackId = 'starter' | 'createur' | 'pro';
-
-const PRICING_PACKS = [
-  {
-    id: 'starter' as PackId,
-    title: 'Pack Starter',
-    price: 3000,
-    credits: 50,
-    description: 'Idéal pour démarrer rapidement avec des contenus puissants.',
-  },
-  {
-    id: 'createur' as PackId,
-    title: 'Pack Créateur',
-    price: 7000,
-    credits: 150,
-    description: 'Le pack recommandé pour des créateurs réguliers.',
-    popular: true,
-  },
-  {
-    id: 'pro' as PackId,
-    title: 'Pack Pro',
-    price: 14000,
-    credits: 350,
-    description: 'La meilleure autonomie pour vos publications mensuelles.',
-  },
-];
-
-// 🔗 LIENS VERS LES PAGES PRODUITS CHARIOW
-const CHARIOW_PRODUCT_URLS: Record<PackId, string> = {
-  starter: 'https://dotqipmz.mychariow.shop/prd_gv95mbx7',
-  createur: 'https://dotqipmz.mychariow.shop/prd_y6upez7f',
-  pro: 'https://dotqipmz.mychariow.shop/prd_huuxea9m',
-};
+function splitName(full: string) {
+  const parts = full.trim().split(/\s+/);
+  return { first: parts[0] ?? '', last: parts.slice(1).join(' ') };
+}
 
 export default function PricingPage() {
-  const navigate = useNavigate();
-  const { user } = useAppStore();
-  
-  // 💡 CORRECTION ANTI-TRADUCTION : On ne stocke que l'ID technique ('starter' | 'createur' | 'pro')
-  const [selectedPackId, setSelectedPackId] = useState<PackId>('createur');
+  const { user, status } = useAppStore();
+  const [params] = useSearchParams();
+  const initial = (getPack(params.get('pack') ?? '')?.id ?? 'createur') as PackId;
+  const [packId, setPackId] = useState<PackId>(initial);
+  const pack = getPack(packId)!;
 
-  // Récupération dynamique des données du pack sélectionné à des fins d'affichage
-  const selectedPack = PRICING_PACKS.find((p) => p.id === selectedPackId) || PRICING_PACKS[1];
+  const [form, setForm] = useState({ firstName: '', lastName: '', country: 'BJ', phone: '' });
+  const [errors, setErrors] = useState<Partial<Record<keyof typeof form, string>>>({});
+  const [submitError, setSubmitError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleCheckout = () => {
-    if (!user) {
-      toast.error('Utilisateur non connecté.');
-      return;
+  useEffect(() => {
+    if (!user) return;
+    const { first, last } = splitName(user.name);
+    setForm((f) => ({
+      ...f,
+      firstName: f.firstName || first,
+      lastName: f.lastName || last,
+      country: user.country || f.country,
+    }));
+  }, [user]);
+
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+    if (errors[key]) setErrors((er) => ({ ...er, [key]: undefined }));
+  };
+
+  const validate = () => {
+    const next: typeof errors = {};
+    if (!form.firstName.trim()) next.firstName = 'Indique ton prénom.';
+    if (!form.lastName.trim()) next.lastName = 'Indique ton nom.';
+    const phone = normalizePhone(form.country, form.phone);
+    if (!phone.ok) next.phone = phone.error;
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitError('');
+    if (!validate()) return;
+    setSubmitting(true);
+    try {
+      const url = await apiService.initiateCheckout({ pack: packId, ...form });
+      window.location.assign(url);
+    } catch (err) {
+      setSubmitError(err instanceof ApiError ? err.message : 'Le paiement n’a pas pu démarrer. Réessaie dans un instant.');
+      setSubmitting(false);
     }
-
-    const targetUrl = CHARIOW_PRODUCT_URLS[selectedPackId];
-
-    if (!targetUrl || targetUrl.includes('ton-lien-page')) {
-      toast.error('La page de ce produit n’est pas encore configurée.');
-      return;
-    }
-
-    // Redirection vers ta page produit personnalisée sur Chariow dans un nouvel onglet
-    window.open(targetUrl, '_blank');
   };
 
   return (
-    <div className="min-h-screen bg-[#0A0A14] text-white">
-      <div className="flex">
-        <Sidebar />
-        <main className="flex-1 p-8">
-          <div className="flex items-center gap-4 mb-8">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate('/dashboard')}
-              className="md:hidden"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div>
-              <p className="text-sm text-[#94A3B8] mb-1">Monétisation par crédits</p>
-              <h1 className="text-3xl font-bold">Tarifs & Packs</h1>
-            </div>
-          </div>
+    <SiteLayout>
+      <div className="mx-auto max-w-6xl">
+        <PageHeader
+          eyebrow="Tarifs"
+          title="Des crédits, sans abonnement"
+          description={`Un mois de contenu (1 calendrier + ${MONTH_PLAN.scripts} scripts) demande ${MONTH_PLAN.credits} crédits. Les crédits n’expirent jamais.`}
+        />
 
-          <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-            <section className="space-y-6">
-              <Card className="bg-[#12121F] border-[#1E1E3A]">
-                <CardHeader>
-                  <CardTitle className="text-xl">Vos options</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-[#94A3B8] leading-7">
-                    Choisissez un pack de crédits pour continuer à générer du contenu. Chaque génération consomme des crédits selon le type d'outil, et votre solde est actualisé automatiquement après un paiement réussi.
-                  </p>
-                </CardContent>
-              </Card>
+        <PricingCards selected={packId} onSelect={setPackId} />
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                {PRICING_PACKS.map((pack) => (
-                  <Card
-                    key={pack.id}
-                    onClick={() => setSelectedPackId(pack.id)}
-                    className={`cursor-pointer border-2 transition-all ${
-                      selectedPackId === pack.id 
-                        ? 'border-[#7C3AED] bg-[#1F1B3A]' 
-                        : 'border-[#1E1E3A] bg-[#12121F] hover:border-[#7C3AED]/70'
-                    }`}
-                  >
-                    <CardContent className="p-6">
-                      <div className="flex items-center justify-between gap-2 mb-4">
-                        <div>
-                          <h2 className="text-lg font-semibold">{pack.title}</h2>
-                          <p className="text-sm text-[#94A3B8] mt-1">{pack.credits} crédits</p>
-                        </div>
-                        {pack.popular && (
-                          <Badge className="bg-[#f59e0b] text-black">Recommandé</Badge>
-                        )}
-                      </div>
-                      <p className="text-4xl font-bold mb-3">{pack.price.toLocaleString('fr-FR')} FCFA</p>
-                      <p className="text-sm text-[#cbd5e1]">{pack.description}</p>
-                    </CardContent>
-                  </Card>
-                ))}
+        <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+          <section aria-labelledby="paiement" className="rounded-2xl border border-[#1E1E3A] bg-[#12121F] p-6">
+            <h2 id="paiement" className="text-lg font-medium text-white">
+              Payer le {pack.name} · {formatFcfa(pack.priceFcfa)}
+            </h2>
+
+            {status !== 'signedIn' ? (
+              <div className="mt-4 space-y-4">
+                <p className="text-[#94A3B8]">Crée ton compte (ou connecte-toi) pour que les crédits arrivent au bon endroit.</p>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Link to={`/signup?next=${encodeURIComponent(`/pricing?pack=${packId}`)}`} className="grid min-h-12 place-items-center rounded-xl bg-[#7C3AED] px-6 font-medium text-white hover:bg-[#6D28D9]">
+                    Créer mon compte
+                  </Link>
+                  <Link to={`/login?next=${encodeURIComponent(`/pricing?pack=${packId}`)}`} className="grid min-h-12 place-items-center rounded-xl border border-[#2D2D5E] px-6 font-medium text-white hover:bg-[#1A1A2E]">
+                    J’ai déjà un compte
+                  </Link>
+                </div>
               </div>
-            </section>
+            ) : (
+              <form onSubmit={submit} noValidate className="mt-5 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field id="firstName" label="Prénom" error={errors.firstName}>
+                    <TextInput value={form.firstName} onChange={set('firstName')} autoComplete="given-name" maxLength={50} />
+                  </Field>
+                  <Field id="lastName" label="Nom" error={errors.lastName}>
+                    <TextInput value={form.lastName} onChange={set('lastName')} autoComplete="family-name" maxLength={50} />
+                  </Field>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+                  <Field id="country" label="Pays">
+                    <NativeSelect value={form.country} onChange={set('country')} autoComplete="country">
+                      {COUNTRIES.map((c) => (
+                        <option key={c.iso} value={c.iso}>{c.name} (+{c.dial})</option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                  <Field id="phone" label="Numéro Mobile Money" hint="Le numéro qui recevra la demande de paiement." error={errors.phone}>
+                    <TextInput type="tel" inputMode="tel" value={form.phone} onChange={set('phone')} autoComplete="tel-national" placeholder="01 97 00 00 00" />
+                  </Field>
+                </div>
 
-            <section className="space-y-6">
-              <Card className="bg-[#12121F] border-[#1E1E3A] p-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#7C3AED]/20 text-[#7C3AED]">
-                    <Zap className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-[#94A3B8]">Solde actuel</p>
-                    <p className="text-3xl font-bold">{user?.credits ?? 0} crédits</p>
-                  </div>
-                </div>
-                <div className="space-y-4 text-sm text-[#cbd5e1]">
-                  <p><span className="font-semibold">Pack sélectionné :</span> {selectedPack.title}</p>
-                  <p><span className="font-semibold">Montant :</span> {selectedPack.price.toLocaleString('fr-FR')} FCFA</p>
-                  <p><span className="font-semibold">Crédits :</span> {selectedPack.credits}</p>
-                </div>
-                <Button
-                  onClick={handleCheckout}
-                  className="mt-6 w-full bg-[#7C3AED] hover:bg-[#6D28D9] text-white"
+                <p className="text-sm text-[#94A3B8]">
+                  Les crédits seront ajoutés au compte <span className="text-white">{user?.email}</span>.
+                </p>
+
+                {submitError && (
+                  <p role="alert" className="rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-300">
+                    {submitError}
+                  </p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#7C3AED] px-6 font-medium text-white transition-colors hover:bg-[#6D28D9] disabled:opacity-60 sm:w-auto"
                 >
-                  Acheter ce pack
-                </Button>
-              </Card>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}
+                  {submitting ? 'Ouverture du paiement…' : `Payer ${formatFcfa(pack.priceFcfa)}`}
+                </button>
+                <p className="text-xs text-[#64748B]">
+                  Paiement traité par Chariow (Mobile Money ou carte). En payant, tu acceptes les{' '}
+                  <Link to="/conditions" className="underline hover:text-white">conditions de vente</Link>.
+                </p>
+              </form>
+            )}
+          </section>
 
-              <Card className="bg-[#0F172A] border-[#1E293B] p-6">
-                <h3 className="text-lg font-semibold mb-3">Comment ça marche ?</h3>
-                <ul className="space-y-3 text-sm text-[#cbd5e1]">
-                  <li>• Le paiement est traité par <strong>Chariow</strong> en toute sécurité.</li>
-                  <li>• Après votre achat, vous êtes automatiquement redirigé vers votre tableau de bord.</li>
-                  <li>• Les crédits sont ajoutés à votre compte <strong>de manière instantanée</strong>.</li>
-                  <li>• Vous pouvez ensuite générer votre contenu  immédiatement.</li>
-                </ul>
-              </Card>
-            </section>
-          </div>
-        </main>
+          <aside aria-labelledby="couts" className="rounded-2xl border border-[#1E1E3A] p-6">
+            <h2 id="couts" className="text-lg font-medium text-white">Coût de chaque outil</h2>
+            <table className="mt-4 w-full text-sm">
+              <tbody className="divide-y divide-[#1E1E3A]">
+                {TOOLS.map((t) => (
+                  <tr key={t.id}>
+                    <th scope="row" className="py-3 text-left font-normal text-[#CBD5E1]">{t.title}</th>
+                    <td className="py-3 text-right tabular-nums text-white">{plural(TOOL_COSTS[t.id], 'crédit')}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <th scope="row" className="py-3 text-left font-medium text-white">Un mois complet</th>
+                  <td className="py-3 text-right font-medium tabular-nums text-white">{MONTH_PLAN.credits} crédits</td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="mt-4 text-sm text-[#94A3B8]">
+              {status === 'signedIn' && user ? <>Ton solde : <span className="tabular-nums text-white">{user.credits}</span> crédits.</> : `Packs de ${PACKS.map((p) => p.credits).join(', ')} crédits.`}
+            </p>
+          </aside>
+        </div>
       </div>
-    </div>
+    </SiteLayout>
   );
 }

@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /tools/
+Disallow: /history
+Disallow: /settings
+Disallow: /onboarding
+
+Sitemap: https://creator-booster.vercel.app/sitemap.xml

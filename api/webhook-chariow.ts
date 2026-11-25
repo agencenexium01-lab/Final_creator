@@ -3,9 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from './_lib/firebaseAdmin.js';
 import { readSale, verifyPulseSignature } from './_lib/pulse.js';
 
-// Le corps doit rester brut : la signature porte sur les octets exacts envoyés par Chariow.
-export const config = { api: { bodyParser: false } };
-
+/** Corps brut : la signature porte sur les octets exacts envoyés par Chariow (ne pas lire req.body avant). */
 async function readRawBody(req: VercelRequest): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);

@@ -1,6 +1,6 @@
+import type { ToolId, Platform } from '@/config/ui';
 
-export type Platform = 'tiktok' | 'facebook' | 'both';
-export type ToolType = 'hooks' | 'script' | 'ideas' | 'calendar';
+export type { ToolId, Platform };
 
 export interface UserProfile {
   id: string;
@@ -8,23 +8,13 @@ export interface UserProfile {
   email: string;
   niche?: string;
   platform: Platform;
+  country?: string;
   credits: number;
   totalCreditsUsed: number;
   totalCreditsPurchased: number;
   lastPurchaseDate: string;
   lastPurchasePack: 'starter' | 'createur' | 'pro' | '';
   onboarding_completed: boolean;
-  created_at: string;
-}
-
-export interface Generation {
-  id: string;
-  user_id: string;
-  tool: ToolType;
-  niche: string;
-  platform: string;
-  input_data: any;
-  output_data: any;
   created_at: string;
 }
 
@@ -36,21 +26,6 @@ export interface HookResult {
   justification: string;
 }
 
-export interface ScriptSection {
-  id: string;
-  label: string;
-  duration?: string;
-  content: string;
-  visual_note?: string;
-}
-
-export interface ScriptResult {
-  platform: 'tiktok' | 'facebook';
-  duration_estimate?: string;
-  reading_time?: string;
-  sections: ScriptSection[];
-}
-
 export interface IdeaResult {
   title: string;
   description: string;
@@ -58,15 +33,43 @@ export interface IdeaResult {
   platform: string;
 }
 
+export interface ScriptSection {
+  id: string;
+  label: string;
+  content: string;
+  visual_note?: string;
+}
+
+export interface ScriptResult {
+  title: string;
+  platform: 'tiktok' | 'facebook';
+  sections: ScriptSection[];
+  caption?: string;
+  hashtags?: string[];
+}
+
 export interface CalendarDay {
   day: number;
-  week: number;
+  date: string;
   idea: string;
   hook: string;
   format: string;
   platform: string;
 }
 
-export interface CalendarResult {
-  calendar: CalendarDay[];
+export type GenerationOutput =
+  | { hooks: HookResult[] }
+  | { ideas: IdeaResult[] }
+  | ScriptResult
+  | { days: CalendarDay[] }
+  | string; // anciens calendriers en texte brut
+
+export interface Generation {
+  id: string;
+  tool: ToolId;
+  niche: string;
+  platform: string;
+  input: Record<string, unknown> | null;
+  output: GenerationOutput | null;
+  createdAt: string;
 }
