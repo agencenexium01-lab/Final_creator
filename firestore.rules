@@ -1,108 +1,68 @@
 rules_version = '2';
+
+// Modèle de données
+// users/{uid}             profil + solde. Les champs de crédits ne sont écrits QUE par le serveur.
+// generations/{id}        historique, écrit par le serveur (api/generate.ts), lisible par son auteur.
+// processed_sales/{id}    ventes Chariow déjà créditées (serveur uniquement).
+// unmatched_sales/{id}    ventes sans compte correspondant (serveur uniquement).
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: profiles
-    // Document ID: userId
-    // Fields:
-    //   - id: string (required)
-    //   - name: string (required, 2-50 chars)
-    //   - email: string (required, email format)
-    //   - niche: string (optional)
-    //   - platform: string (required, enum: tiktok, facebook, both)
-    //   - onboarding_completed: bool (required)
-    //   - created_at: string (required, ISO 8601)
-    //
-    // Collection: generations
-    // Document ID: generationId
-    // Fields:
-    //   - id: string (required)
-    //   - user_id: string (required, matches auth.uid)
-    //   - tool: string (required, enum: hooks, script, ideas, calendar)
-    //   - niche: string (required)
-    //   - platform: string (required)
-    //   - input_data: map (required)
-    //   - output_data: map (required)
-    //   - created_at: string (required, ISO 8601)
-    //
-    // ===============================================================
 
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
-    
-    function isAuthenticated() {
+    function signedIn() {
       return request.auth != null;
     }
-    
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-    
-    function isValidEmail(email) {
-      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
     }
 
-    function isValidDateString(dateStr) {
-      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    // Champs que l'utilisateur peut modifier lui-même.
+    function editableKeys() {
+      return ['name', 'niche', 'platform', 'country', 'onboarding_completed'];
     }
 
-    // ===============================================================
-    // Domain Validators
-    // ===============================================================
-
-    function isValidProfile(data) {
-      return data.keys().hasAll(['name', 'email', 'platform', 'onboarding_completed']) &&
-             data.name is string && data.name.size() >= 2 && data.name.size() <= 50 &&
-             isValidEmail(data.email) &&
-             data.platform in ['tiktok', 'facebook', 'both'] &&
-             data.onboarding_completed is bool;
+    function validEditable(d) {
+      return d.name is string && d.name.size() >= 2 && d.name.size() <= 50
+        && (!('niche' in d) || (d.niche is string && d.niche.size() <= 80))
+        && d.platform in ['tiktok', 'facebook', 'both']
+        && (!('country' in d) || (d.country is string && d.country.matches('^[A-Z]{2}$')))
+        && d.onboarding_completed is bool;
     }
 
-    function isValidGeneration(data) {
-      return data.keys().hasAll(['user_id', 'tool', 'niche', 'platform', 'input_data', 'output_data', 'created_at']) &&
-             data.user_id == request.auth.uid &&
-             data.tool in ['hooks', 'script', 'ideas', 'calendar'] &&
-             data.niche is string &&
-             data.platform is string &&
-             data.input_data is map &&
-             data.output_data is map &&
-             isValidDateString(data.created_at);
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+
+      // Création du profil à l'inscription : solde à zéro, rien d'acheté.
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['id', 'email', 'created_at', 'credits', 'totalCreditsUsed',
+             'totalCreditsPurchased', 'lastPurchaseDate', 'lastPurchasePack'].concat(editableKeys()))
+        && request.resource.data.id == uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.credits == 0
+        && request.resource.data.totalCreditsUsed == 0
+        && request.resource.data.totalCreditsPurchased == 0
+        && request.resource.data.lastPurchaseDate == ''
+        && request.resource.data.lastPurchasePack == ''
+        && request.resource.data.created_at is string
+        && validEditable(request.resource.data);
+
+      // Mise à jour : uniquement les champs de profil, jamais les crédits.
+      allow update: if isOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(editableKeys())
+        && validEditable(request.resource.data);
+
+      allow delete: if false;
     }
 
-    // ===============================================================
-    // Rules
-    // ===============================================================
-
-    function isValidUser(data) {
-      return data.keys().hasAll(['name', 'email', 'platform', 'onboarding_completed', 'credits', 'totalCreditsUsed', 'totalCreditsPurchased', 'lastPurchaseDate', 'lastPurchasePack', 'created_at']) &&
-             data.name is string && data.name.size() >= 2 && data.name.size() <= 50 &&
-             isValidEmail(data.email) &&
-             data.platform in ['tiktok', 'facebook', 'both'] &&
-             data.onboarding_completed is bool &&
-             data.credits is number && data.credits >= 0 &&
-             data.totalCreditsUsed is number && data.totalCreditsUsed >= 0 &&
-             data.totalCreditsPurchased is number && data.totalCreditsPurchased >= 0 &&
-             data.lastPurchaseDate is string &&
-             data.lastPurchasePack in ['starter', 'createur', 'pro', ''] &&
-             data.created_at is string;
+    match /generations/{id} {
+      allow read, delete: if signedIn() && resource.data.user_id == request.auth.uid;
+      allow create, update: if false;
     }
 
-    match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUser(request.resource.data);
-      allow update: if isOwner(userId) && isValidUser(request.resource.data) &&
-                    request.resource.data.email == resource.data.email;
-    }
-
-    match /generations/{generationId} {
-      allow read: if isAuthenticated() && resource.data.user_id == request.auth.uid;
-      allow create: if isAuthenticated() && isValidGeneration(request.resource.data);
-      allow delete: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+    // Tout le reste est réservé au serveur (SDK Admin, qui ignore ces règles).
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

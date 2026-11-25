@@ -1,257 +1,135 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import crypto from 'crypto';
+import { FieldValue } from 'firebase-admin/firestore';
+import { adminDb } from './_lib/firebaseAdmin.js';
+import { HttpError, allowMethods, requireUser, sendError } from './_lib/http.js';
+import { getToolCost } from '../src/shared/pricing.js';
+import { buildPrompt, normalizeResult, RESPONSE_SCHEMAS, validateGenerationInput } from '../src/shared/generation.js';
+import { getCountry } from '../src/shared/phone.js';
 
-const TOOL_COSTS: Record<string, number> = {
-  hooks: 2,
-  script: 4,
-  ideas: 5,
-  calendar: 15,
-};
+type ToolId = 'hooks' | 'ideas' | 'script' | 'calendar';
 
-// 💡 Fonction d'assistance pour générer un jeton d'accès Google OAuth2
-async function getGoogleAuthToken(clientEmail: string, privateKey: string): Promise<string> {
-  const header = { alg: 'RS256', typ: 'JWT' };
-  
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    iss: clientEmail,
-    scope: 'https://www.googleapis.com/auth/datastore',
-    aud: 'https://oauth2.googleapis.com/token',
-    exp: now + 3600,
-    iat: now,
-  };
+/** Délai minimum entre deux générations d'un même compte. */
+const MIN_INTERVAL_MS = 5_000;
+const GEMINI_TIMEOUT_MS = 50_000;
 
-  const base64UrlEncode = (str: string) => 
-    Buffer.from(str).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+async function callGemini(system: string, user: string, tool: ToolId): Promise<unknown> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY manquante');
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
-  
-  const sign = crypto.createSign('RSA-SHA256');
-  sign.update(`${encodedHeader}.${encodedPayload}`);
-  const signature = base64UrlEncode(sign.sign(privateKey.replace(/\\n/g, '\n')));
-
-  const jwt = `${encodedHeader}.${encodedPayload}.${signature}`;
-
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to exchange JWT for token: ${await response.text()}`);
-  }
-
-  const data = await response.json();
-  return data.access_token;
-}
-
-const buildPrompt = (tool: string, params: Record<string, any>) => {
-  const { niche, platform, topic, tone, hook, message, goal, duration } = params;
-  const context = `Niche: ${niche || 'générique'}\nPlateforme: ${platform || 'both'}\n`; 
-
-  if (tool === 'hooks') {
-    return `${context}Tu es un expert en marketing viral dans l'espace francophone. Génère 10 hooks d'accroche très impactants pour du contenu court. Réponds uniquement par un objet JSON valide:
-{
-  "hooks": [
-    {"hook": "...", "framework": "...", "platform": "...", "score": 0, "justification": "..."}
-  ]
-}
-
-Sujet: ${topic || 'général'}\nTon: ${tone || 'Motivationnel'}`;
-  }
-
-  if (tool === 'script') {
-    return `${context}Tu es un expert en création de scripts pour vidéos courtes. Génère un script complet structuré dans un format JSON valide:
-{
-  "platform": "...",
-  "sections": [
-    {"id": "...", "label": "...", "content": "...", "visual_note": "..."}
-  ]
-}
-
-Objectif: ${goal || 'Inspirer et motiver'}\nHook: ${hook || 'Accroche forte'}\nMessage: ${message || 'Message principal'}\nDurée: ${duration || '60 sec'}`;
-  }
-
-  if (tool === 'ideas') {
-    return `${context}Tu es un stratège de contenus créatifs. Propose 20 idées originales sous la forme d'un JSON valide:
-{
-  "ideas": [
-    {"title": "...", "description": "...", "format": "...", "platform": "..."}
-  ]
-}
-
-Objectif: ${goal || "Créer de l'engagement"}\nTon: ${tone || 'Inspirant'}`;
-  }
-
-  // 💡 NOUVEAU PROMPT : Linéaire et textuel pour éviter les coupures sur 30 jours
-  if (tool === 'calendar') {
-    return `${context}Tu es un stratège de contenus créatifs. Crée un calendrier éditorial détaillé de 30 jours sous forme de liste textuelle linéaire et claire.
-Utilise TRÈS STRICTEMENT ce format pour chaque jour :
-Jour 1 : [Titre ou Idée] - [Description de l'action à faire] - [Plateforme]
-Jour 2 : [Titre ou Idée] - [Description de l'action à faire] - [Plateforme]
-... jusqu'au Jour 30 ou 31 dépendamment dans quel mois on se trouve.
-
-Ne mets aucun autre texte d'introduction ou de conclusion. Aligne les jours les uns après les autres.
-Objectif: ${goal || 'Planifier le contenu du mois'}`;
-  }
-
-  return `${context}Réponds uniquement par un JSON valide contenant le résultat attendu.`;
-};
-
-const extractJson = (text: string) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
   try {
-    return JSON.parse(text);
-  } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      return JSON.parse(match[0]);
-    }
-    throw new Error('Unable to parse JSON response from Gemini');
-  }
-};
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  try {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method not allowed' });
-    }
-
-    const { userId, tool, params } = req.body;
-
-    console.log(`[REST BACKEND] Outil: "${tool}" | ID Utilisateur: "${userId}"`);
-
-    if (!userId || !tool) {
-      return res.status(400).json({ error: 'Missing userId or tool' });
-    }
-
-    const requiredCost = TOOL_COSTS[tool];
-    if (requiredCost === undefined) {
-      return res.status(400).json({ error: 'Invalid tool type' });
-    }
-
-    const projectId = process.env.FIREBASE_PROJECT_ID;
-    const dbId = process.env.FIREBASE_DATABASE_ID || process.env.VITE_FIREBASE_DATABASE_ID;
-    const geminiKey = process.env.GEMINI_API_KEY;
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY;
-
-    if (!projectId || !dbId || !geminiKey || !clientEmail || !privateKey) {
-      return res.status(500).json({ error: 'Missing environment variables on Vercel' });
-    }
-
-    let authToken: string;
-    try {
-      authToken = await getGoogleAuthToken(clientEmail, privateKey);
-    } catch (authErr: any) {
-      console.error('[REST AUTH ERROR] Impossible de générer le jeton Google Cloud :', authErr.message);
-      return res.status(500).json({ error: 'DATABASE_AUTH_FAILED', details: authErr.message });
-    }
-
-    const firestoreUserUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${dbId}/documents/users/${userId}`;
-
-    const userResponse = await fetch(firestoreUserUrl, {
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
-    
-    if (!userResponse.ok) {
-      if (userResponse.status === 404) {
-        return res.status(404).json({ error: 'User not found in Firestore via REST' });
-      }
-      const rawErr = await userResponse.text();
-      console.error('[REST ERROR] Échec de lecture utilisateur:', rawErr);
-      return res.status(500).json({ error: 'DATABASE_FETCH_FAILED', details: rawErr });
-    }
-
-    const userDoc = await userResponse.json();
-    
-    const creditsValue = userDoc.fields?.credits?.integerValue || userDoc.fields?.credits?.doubleValue || "0";
-    const currentCredits = parseInt(creditsValue, 10);
-
-    console.log(`[REST DEBUG] Crédits authentifiés trouvés : ${currentCredits}`);
-
-    if (currentCredits < requiredCost) {
-      return res.status(402).json({ error: 'INSUFFICIENT_CREDITS' });
-    }
-
-    const prompt = buildPrompt(tool, params || {});
-    
-    console.log("[GEMINI] Envoi du prompt au modèle actif gemini-2.5-flash-preview-05-20...");
-
-    // 💡 URL Mise à jour avec la version v1 officielle et le bon modèle actif de ta liste
-    const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: user }] }],
+        generationConfig: {
+          temperature: 0.9,
+          maxOutputTokens: 8192,
+          responseMimeType: 'application/json',
+          responseSchema: RESPONSE_SCHEMAS[tool],
+          // Peu de « réflexion » : les sorties sont créatives, pas des calculs. Réduit coût et latence.
+          thinkingConfig: { thinkingBudget: 512 },
+        },
       }),
     });
-
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error('[GEMINI ERROR] Code:', aiResponse.status, 'Détails:', errorText);
-      return res.status(502).json({ error: 'Gemini API error', status: aiResponse.status, details: errorText });
+    if (!response.ok) {
+      throw new Error(`Gemini ${response.status}: ${(await response.text()).slice(0, 500)}`);
     }
+    const data = await response.json();
+    const text: string = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? '';
+    return JSON.parse(text);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-    const aiData = await aiResponse.json();
-    const aiText = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    
-    // 💡 PARSING ADAPTATIF : Si c'est le calendrier, on garde le texte brut. Sinon, on parse le JSON.
-    let parsedResult: any;
-    if (tool === 'calendar') {
-      parsedResult = aiText;
-    } else {
-      parsedResult = extractJson(aiText);
-    }
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!allowMethods(req, res, ['POST'])) return;
 
-    // 3. Mise à jour des crédits
-    const newCredits = currentCredits - requiredCost;
-    const totalCreditsUsedValue = userDoc.fields?.totalCreditsUsed?.integerValue || userDoc.fields?.totalCreditsUsed?.doubleValue || "0";
-    const newTotalUsed = parseInt(totalCreditsUsedValue, 10) + requiredCost;
+  let charged: { uid: string; cost: number } | null = null;
+  const db = adminDb();
 
-    const updateResponse = await fetch(`${firestoreUserUrl}?updateMask.fieldPaths=credits&updateMask.fieldPaths=totalCreditsUsed`, {
-      method: 'PATCH',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        fields: {
-          credits: { integerValue: String(newCredits) },
-          totalCreditsUsed: { integerValue: String(newTotalUsed) }
-        }
-      })
+  try {
+    const { uid } = await requireUser(req);
+    const tool = String(req.body?.tool ?? '');
+    const cost = getToolCost(tool);
+    if (cost === null) throw new HttpError(400, 'INVALID_TOOL', 'Outil inconnu.');
+
+    const input = validateGenerationInput(tool, req.body?.params ?? {});
+    if (!input.ok) throw new HttpError(400, 'INVALID_INPUT', input.error);
+
+    const userRef = db.doc(`users/${uid}`);
+
+    // 1. Réserver les crédits AVANT d'appeler l'IA, dans une transaction : deux requêtes
+    //    simultanées ne peuvent pas dépenser le même solde.
+    const { country } = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      if (!snap.exists) throw new HttpError(404, 'USER_NOT_FOUND', 'Profil introuvable.');
+      const user = snap.data() as { credits?: number; lastGenerationAt?: number; country?: string };
+      const credits = Number(user.credits) || 0;
+      if (credits < cost) throw new HttpError(402, 'INSUFFICIENT_CREDITS', `Il te faut ${cost} crédits pour cet outil.`);
+      if (user.lastGenerationAt && Date.now() - user.lastGenerationAt < MIN_INTERVAL_MS) {
+        throw new HttpError(429, 'TOO_FAST', 'Une génération est déjà en cours. Patiente quelques secondes.');
+      }
+      tx.update(userRef, {
+        credits: FieldValue.increment(-cost),
+        totalCreditsUsed: FieldValue.increment(cost),
+        lastGenerationAt: Date.now(),
+      });
+      return { country: user.country };
     });
+    charged = { uid, cost };
 
-    if (!updateResponse.ok) {
-      console.error('[REST ERROR] Échec de la déduction de crédits:', await updateResponse.text());
+    // 2. Générer (une nouvelle tentative si la réponse est inutilisable).
+    const prompt = buildPrompt(tool as ToolId, input.params, {
+      countryName: country ? getCountry(country)?.name : undefined,
+      today: new Date(),
+    });
+    let result = null;
+    for (let attempt = 0; attempt < 2 && !result; attempt++) {
+      try {
+        result = normalizeResult(tool as ToolId, await callGemini(prompt.system, prompt.user, tool as ToolId));
+      } catch (err) {
+        console.error('[generate] tentative', attempt + 1, err instanceof Error ? err.message : err);
+      }
+    }
+    if (!result) throw new HttpError(502, 'GENERATION_FAILED', "L'IA n'a pas répondu correctement. Tes crédits ont été remboursés, réessaie.");
+
+    charged = null; // Contenu obtenu : les crédits sont dus, même si l'archivage échoue.
+
+    // 3. Archiver la génération pour l'historique.
+    let id: string | null = null;
+    try {
+      const genRef = await db.collection('generations').add({
+        user_id: uid,
+        tool,
+        cost,
+        niche: input.params.niche,
+        platform: input.params.platform,
+        input_data: input.params,
+        output_data: result,
+        created_at: new Date().toISOString(),
+      });
+      id = genRef.id;
+    } catch (e) {
+      console.error('[generate] archivage impossible', e instanceof Error ? e.message : e);
     }
 
-    // 4. Enregistrement de l'historique de génération
-    const firestoreGenUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${dbId}/documents/generations`;
-    await fetch(firestoreGenUrl, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        fields: {
-          user_id: { stringValue: userId },
-          tool: { stringValue: tool },
-          niche: { stringValue: params?.niche || '' },
-          platform: { stringValue: params?.platform || '' },
-          created_at: { stringValue: new Date().toISOString() },
-          output_data_string: { stringValue: typeof parsedResult === 'string' ? parsedResult : JSON.stringify(parsedResult) }
-        }
-      })
-    });
-
-    return res.status(200).json({ result: parsedResult });
-
-  } catch (error: any) {
-    console.error('REST Function Global Error:', error);
-    return res.status(500).json({ error: error.message || 'Internal server error' });
+    const after = await userRef.get();
+    return res.status(200).json({ id, result, credits: Number(after.get('credits')) || 0 });
+  } catch (err) {
+    if (charged) {
+      const { uid, cost } = charged;
+      await db
+        .doc(`users/${uid}`)
+        .update({ credits: FieldValue.increment(cost), totalCreditsUsed: FieldValue.increment(-cost), lastGenerationAt: 0 })
+        .catch((e) => console.error('[generate] remboursement impossible pour', uid, e));
+    }
+    return sendError(res, err, 'generate');
   }
 }
