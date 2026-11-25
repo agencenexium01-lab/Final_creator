@@ -42,6 +42,19 @@
   summary::-webkit-details-marker {
     display: none;
   }
+  /* Listes déroulantes natives : sous Windows, le menu ouvert garde un fond blanc système
+     alors que le texte hérite du blanc du champ. On impose des couleurs lisibles. */
+  select {
+    color-scheme: dark;
+  }
+  select option,
+  select optgroup {
+    background-color: #12121F;
+    color: #F1F5F9;
+  }
+  select option:checked {
+    background-color: #2D2D5E;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
