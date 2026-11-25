@@ -65,18 +65,16 @@ function CalendarView({ days, preview, limit, pdfTitle }: { days: CalendarDay[];
           <CopyButton text={calendarToText(days)} label="Tout copier" />
         </div>
       )}
-      <ol className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <ol className="grid gap-3 sm:grid-cols-2">
         {shown.map((d) => (
           <li key={d.day} className={cn(card, 'flex flex-col p-4')}>
-            <div className="mb-2 flex items-baseline justify-between gap-2 text-xs text-[#94A3B8]">
-              <span className="font-medium text-white">
-                Jour {d.day}
-                {d.date && <span className="ml-1.5 font-normal text-[#94A3B8]">{formatDate(d.date)}</span>}
-              </span>
-              <span>{d.format} · {platformName(d.platform)}</span>
+            <div className="mb-2 flex items-baseline justify-between gap-2 text-xs">
+              <span className="font-medium text-white">Jour {d.day}</span>
+              {d.date && <span className="text-[#94A3B8]">{formatDate(d.date)}</span>}
             </div>
             <p className="text-[15px] leading-snug text-white">{d.idea}</p>
             <p className="mt-2 border-l-2 border-[#7C3AED] pl-3 text-sm leading-snug text-[#CBD5E1]">{d.hook}</p>
+            <p className="mt-3 text-xs text-[#94A3B8]">{d.format} · {platformName(d.platform)}</p>
             {!preview && (
               <button
                 type="button"

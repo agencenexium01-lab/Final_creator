@@ -97,7 +97,7 @@ function ToolPreview() {
         </div>
         <div className="rounded-2xl border border-[#1E1E3A] bg-[#0E0E1A] p-4 md:p-5">
           <p className="mb-4 text-xs text-[#94A3B8]">Exemple de résultat pour : {SAMPLE_PERSONA}</p>
-          <div className="max-h-[560px] overflow-y-auto pr-1">
+          <div className="lg:max-h-[560px] lg:overflow-y-auto lg:pr-1">
             <GenerationView tool={active} output={SAMPLES[active]} preview limit={active === 'calendar' ? 6 : undefined} />
           </div>
         </div>
@@ -161,8 +161,8 @@ export default function LandingPage() {
         </section>
 
         {/* Aperçu des résultats */}
-        <section id="apercu" className="scroll-mt-20 border-t border-[#1E1E3A] px-4 py-16 md:py-24">
-          <div className="mx-auto max-w-6xl">
+        <section id="apercu" className="scroll-mt-20 border-t border-[#1E1E3A] py-16 md:py-24">
+          <div className="mx-auto max-w-6xl px-4">
             <h2 className="max-w-2xl text-3xl font-semibold tracking-tight md:text-4xl">Ce que tu obtiens, outil par outil</h2>
             <p className="mt-3 max-w-2xl text-[#94A3B8]">
               Choisis un outil pour voir le format exact du résultat, et sa démo vidéo.
@@ -174,8 +174,8 @@ export default function LandingPage() {
         </section>
 
         {/* Niches */}
-        <section className="border-t border-[#1E1E3A] bg-[#0E0E1A] px-4 py-16">
-          <div className="mx-auto max-w-6xl">
+        <section className="border-t border-[#1E1E3A] bg-[#0E0E1A] py-16">
+          <div className="mx-auto max-w-6xl px-4">
             <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Toutes les niches, et la tienne</h2>
             <p className="mt-2 text-[#94A3B8]">Choisis dans la liste ou écris ta niche exacte : « coiffure afro à Abidjan », « immobilier à Dakar »…</p>
             <ul className="mt-8 flex flex-wrap gap-2">
@@ -209,8 +209,8 @@ export default function LandingPage() {
         </section>
 
         {/* Engagements */}
-        <section className="border-t border-[#1E1E3A] px-4 py-16">
-          <ul className="mx-auto grid max-w-6xl gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="border-t border-[#1E1E3A] py-16">
+          <ul className="mx-auto grid max-w-6xl gap-6 px-4 sm:grid-cols-2 lg:grid-cols-4">
             {[
               { icon: RotateCcw, title: 'Crédits remboursés si ça rate', text: "Si l'IA ne renvoie pas un résultat exploitable, tes crédits reviennent automatiquement." },
               { icon: InfinityIcon, title: 'Sans abonnement', text: 'Tu paies seulement ce que tu utilises. Les crédits n’expirent pas.' },

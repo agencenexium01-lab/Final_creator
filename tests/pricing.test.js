@@ -62,7 +62,7 @@ test('packCoverage décrit honnêtement ce que couvre chaque pack', () => {
   assert.deepEqual(packCoverage(getPack('pro')), { months: 3, calendars: 4, scripts: 103, leftover: 1 });
 });
 
-test('formatFcfa sépare les milliers par une espace de milliers', () => {
-  assert.equal(formatFcfa(14000), '14 000 FCFA');
-  assert.equal(formatFcfa(600), '600 FCFA');
+test('formatFcfa utilise des espaces insécables (le montant ne se coupe jamais)', () => {
+  assert.equal(formatFcfa(14000), '14\u00a0000\u00a0FCFA');
+  assert.equal(formatFcfa(600), '600\u00a0FCFA');
 });

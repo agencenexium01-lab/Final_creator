@@ -6,7 +6,10 @@ type AuthStatus = 'loading' | 'signedOut' | 'signedIn';
 interface AppState {
   status: AuthStatus;
   user: UserProfile | null;
+  /** Connecté à Firebase mais profil illisible (réseau, règles) : affiché au lieu d'un chargement sans fin. */
+  profileError: boolean;
   setUser: (user: UserProfile | null) => void;
+  setProfileError: (value: boolean) => void;
   patchUser: (updates: Partial<UserProfile>) => void;
 }
 
@@ -15,6 +18,8 @@ interface AppState {
 export const useAppStore = create<AppState>()((set) => ({
   status: 'loading',
   user: null,
-  setUser: (user) => set({ user, status: user ? 'signedIn' : 'signedOut' }),
+  profileError: false,
+  setUser: (user) => set({ user, status: user ? 'signedIn' : 'signedOut', profileError: false }),
+  setProfileError: (profileError) => set({ profileError }),
   patchUser: (updates) => set((s) => ({ user: s.user ? { ...s.user, ...updates } : null })),
 }));

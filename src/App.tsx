@@ -67,9 +67,25 @@ function TitleManager() {
   return null;
 }
 
+function ProfileError() {
+  return (
+    <div className="grid min-h-dvh place-items-center bg-[#0A0A14] px-4 text-center text-white">
+      <div>
+        <h1 className="text-xl font-medium">Impossible de charger ton compte</h1>
+        <p className="mt-2 text-[#94A3B8]">Vérifie ta connexion Internet, puis réessaie.</p>
+        <div className="mt-6 flex justify-center gap-3">
+          <button type="button" onClick={() => window.location.reload()} className="min-h-11 rounded-xl bg-white px-5 font-medium text-[#0A0A14]">Réessayer</button>
+          <button type="button" onClick={() => authService.logout()} className="min-h-11 rounded-xl border border-[#2D2D5E] px-5 text-white">Se déconnecter</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RequireAuth({ children, allowIncomplete = false }: { children: ReactNode; allowIncomplete?: boolean }) {
-  const { status, user } = useAppStore();
+  const { status, user, profileError } = useAppStore();
   const location = useLocation();
+  if (profileError && !user) return <ProfileError />;
   // Connecté côté Firebase mais profil pas encore reçu : on attend au lieu de renvoyer vers la connexion.
   if (status === 'loading' || (status === 'signedOut' && auth.currentUser)) return <FullScreenLoader />;
   if (status === 'signedOut' || !user) {
@@ -98,8 +114,9 @@ function GuestOnly({ children }: { children: ReactNode }) {
 
 export default function App() {
   const setUser = useAppStore((s) => s.setUser);
+  const setProfileError = useAppStore((s) => s.setProfileError);
 
-  useEffect(() => authService.watchSession(setUser), [setUser]);
+  useEffect(() => authService.watchSession(setUser, () => setProfileError(true)), [setUser, setProfileError]);
 
   return (
     <BrowserRouter>

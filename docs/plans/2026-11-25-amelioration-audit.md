@@ -36,3 +36,17 @@
 - Décision : modules partagés en `.js` + JSDoc — Vercel compile chaque `.ts` séparément et Node ESM exige l'extension réelle ; le `.js` évite toute ambiguïté — coût si faux : faible (renommage).
 - Décision : dédoublonnage des ventes sur `sale.id` plutôt que sur `x-pulse-delivery-id` — on veut « une vente = un crédit », même si Chariow livre plusieurs fois — coût si faux : aucun double crédit possible, au pire un rejeu manuel est ignoré.
 - Décision : progression mensuelle = scripts générés / 30 — un script = une vidéo, ce que promet la landing — coût si faux : simple libellé.
+- Décision : politique de remboursement proposée (crédits recrédités si échec IA ; pack non entamé remboursable 14 jours) — nécessaire pour vendre en ligne — coût si faux : à ajuster par le propriétaire dans src/pages/LegalPages.tsx.
+- Décision : montants affichés avec espaces insécables — un prix ne doit jamais être coupé en fin de ligne — coût si faux : nul.
+- Décision : pas de package-lock.json dans cette livraison — impossible de le régénérer hors ligne ici ; à créer avec `npm install` puis à committer — coût si faux : la CI (`npm ci`) échoue tant qu'il manque.
+
+## Vérifications faites
+- 35 tests unitaires (node --test) : 0 échec.
+- Bundle esbuild du front (code splitting) et des 3 fonctions : sans erreur.
+- Contrôle TypeScript strict avec déclarations simplifiées des bibliothèques : aucune erreur dans le code du projet.
+- Rendu réel (React 19 + Tailwind 4, Playwright) de la landing, du tableau de bord, des outils, des résultats, des tarifs, de l'historique, des paramètres, de l'inscription et des CGV, en 375 px et 1280 px : aucune erreur console, aucun débordement horizontal.
+
+## Non vérifié ici (à faire après `npm install`)
+- `npm run check` complet (types réels des bibliothèques, build Vite).
+- Appels réels à Gemini, Chariow et Firestore (nécessitent les clés).
+- Règles Firestore dans l'émulateur.

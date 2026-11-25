@@ -96,5 +96,5 @@ export function packCoverage(pack) {
 /** @param {number} amount */
 export function formatFcfa(amount) {
   const rounded = Math.round(amount);
-  return `${String(rounded).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} FCFA`;
+  return `${String(rounded).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')}\u00a0FCFA`;
 }

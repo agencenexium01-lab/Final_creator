@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Loader2, LogOut } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { BookOpen, ChevronRight, LifeBuoy, Loader2, LogOut, Wallet } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { PageHeader } from '@/components/layout/SiteLayout';
@@ -87,6 +87,20 @@ export default function SettingsPage() {
             Enregistrer
           </button>
         </form>
+
+        <nav aria-label="Liens utiles" className="mt-6 divide-y divide-[#1E1E3A] overflow-hidden rounded-2xl border border-[#1E1E3A]">
+          {[
+            { to: '/pricing', label: 'Recharger mes crédits', icon: Wallet },
+            { to: '/guide', label: 'Guide du créateur', icon: BookOpen },
+            { to: '/contact', label: 'Aide et contact', icon: LifeBuoy },
+          ].map(({ to, label, icon: Icon }) => (
+            <Link key={to} to={to} className="flex min-h-12 items-center gap-3 px-5 text-white hover:bg-[#12121F]">
+              <Icon className="h-4 w-4 text-[#94A3B8]" aria-hidden="true" />
+              <span className="flex-1">{label}</span>
+              <ChevronRight className="h-4 w-4 text-[#64748B]" aria-hidden="true" />
+            </Link>
+          ))}
+        </nav>
 
         <section className="mt-6 rounded-2xl border border-[#1E1E3A] p-6">
           <h2 className="font-medium text-white">Session</h2>
