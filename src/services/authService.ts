@@ -1,35 +1,38 @@
-
-import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  signOut, 
-  onAuthStateChanged,
+import {
+  GoogleAuthProvider,
   createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
+  onAuthStateChanged,
   sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile as updateAuthProfile,
+  type User,
 } from 'firebase/auth';
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc,
-} from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { UserProfile } from '../types';
+import type { UserProfile } from '../types';
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-const buildUserProfile = async (firebaseUser: any, name: string): Promise<UserProfile> => {
-  const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-  if (userDoc.exists()) {
-    return userDoc.data() as UserProfile;
-  }
+/** Champs que l'utilisateur peut modifier (les règles Firestore refusent le reste). */
+export type EditableProfile = Pick<UserProfile, 'name' | 'niche' | 'platform' | 'country' | 'onboarding_completed'>;
 
-  const newUser: UserProfile = {
-    id: firebaseUser.uid,
-    name,
-    email: firebaseUser.email || '',
+function displayNameFor(user: User, fallback?: string) {
+  const raw = (fallback || user.displayName || user.email?.split('@')[0] || 'Créateur').trim();
+  const name = raw.slice(0, 50);
+  return name.length >= 2 ? name : 'Créateur';
+}
+
+/** Crée le profil s'il n'existe pas encore (solde à zéro). */
+async function ensureProfile(user: User, name?: string): Promise<void> {
+  const ref = doc(db, 'users', user.uid);
+  if ((await getDoc(ref)).exists()) return;
+  const profile: UserProfile = {
+    id: user.uid,
+    name: displayNameFor(user, name),
+    email: user.email ?? '',
     platform: 'both',
     credits: 0,
     totalCreditsUsed: 0,
@@ -39,78 +42,79 @@ const buildUserProfile = async (firebaseUser: any, name: string): Promise<UserPr
     onboarding_completed: false,
     created_at: new Date().toISOString(),
   };
-
-  await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-  return newUser;
-};
+  try {
+    await setDoc(ref, profile);
+  } catch (err) {
+    // Deux onglets peuvent créer le profil en même temps : si le document existe maintenant, tout va bien.
+    if (!(await getDoc(ref)).exists()) throw err;
+  }
+}
 
 export const authService = {
-  loginWithGoogle: async (): Promise<UserProfile> => {
-    const result = await signInWithPopup(auth, googleProvider);
-    const firebaseUser = result.user;
-    return buildUserProfile(firebaseUser, firebaseUser.displayName || 'Créateur');
+  async loginWithGoogle() {
+    const { user } = await signInWithPopup(auth, googleProvider);
+    await ensureProfile(user);
   },
 
-  loginWithEmailPassword: async (email: string, password: string): Promise<UserProfile> => {
-    const result = await signInWithEmailAndPassword(auth, email, password);
-    const firebaseUser = result.user;
-    return buildUserProfile(firebaseUser, firebaseUser.displayName || email);
+  async loginWithEmailPassword(email: string, password: string) {
+    const { user } = await signInWithEmailAndPassword(auth, email, password);
+    await ensureProfile(user);
   },
 
-  registerWithEmailPassword: async (name: string, email: string, password: string): Promise<UserProfile> => {
-    const result = await createUserWithEmailAndPassword(auth, email, password);
-    const firebaseUser = result.user;
-    return buildUserProfile(firebaseUser, name);
+  async registerWithEmailPassword(name: string, email: string, password: string) {
+    const { user } = await createUserWithEmailAndPassword(auth, email, password);
+    await updateAuthProfile(user, { displayName: name }).catch(() => undefined);
+    await ensureProfile(user, name);
   },
 
-  sendPasswordResetEmail: async (email: string): Promise<void> => {
-    await sendPasswordResetEmail(auth, email);
+  sendPasswordResetEmail: (email: string) => sendPasswordResetEmail(auth, email),
+
+  logout: () => signOut(auth),
+
+  async updateProfile(updates: Partial<EditableProfile>) {
+    const current = auth.currentUser;
+    if (!current) throw new Error('Non connecté');
+    await updateDoc(doc(db, 'users', current.uid), updates);
   },
 
-  logout: async () => {
-    await signOut(auth);
-  },
-  
-  updateProfile: async (updates: Partial<UserProfile>): Promise<UserProfile> => {
-    if (!auth.currentUser) throw new Error("Non authentifié");
-    const userRef = doc(db, 'users', auth.currentUser.uid);
-    if (Object.keys(updates).length > 0) {
-      await updateDoc(userRef, updates);
-    }
-    const updatedDoc = await getDoc(userRef);
-    return updatedDoc.data() as UserProfile;
+  /** Jeton à envoyer aux fonctions serveur. */
+  async getIdToken(): Promise<string> {
+    const current = auth.currentUser;
+    if (!current) throw new Error('Connecte-toi pour continuer.');
+    return current.getIdToken();
   },
 
-  getProfile: async (): Promise<UserProfile | null> => {
-    if (!auth.currentUser) return null;
-    const userRef = doc(db, 'users', auth.currentUser.uid);
-    const userDoc = await getDoc(userRef);
-    return userDoc.exists() ? (userDoc.data() as UserProfile) : null;
-  },
-
-  addCredits: async (amount: number): Promise<UserProfile> => {
-    if (!auth.currentUser) throw new Error("Non authentifié");
-    const userRef = doc(db, 'users', auth.currentUser.uid);
-    const currentDoc = await getDoc(userRef);
-    const currentData = currentDoc.exists() ? (currentDoc.data() as UserProfile) : { credits: 0 } as UserProfile;
-    const newCredits = (currentData.credits || 0) + amount;
-    await updateDoc(userRef, { credits: newCredits });
-    const updatedDoc = await getDoc(userRef);
-    return updatedDoc.data() as UserProfile;
-  },
-
-  onAuthChange: (callback: (user: UserProfile | null) => void) => {
-    return onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        if (userDoc.exists()) {
-          callback(userDoc.data() as UserProfile);
-        } else {
-          callback(null);
-        }
-      } else {
-        callback(null);
+  /**
+   * Suit la session ET le profil en temps réel (le solde se met à jour seul après un paiement).
+   * Retourne une fonction de désinscription.
+   */
+  watchSession(onProfile: (profile: UserProfile | null) => void, onError: () => void, onPending: (pending: boolean) => void): () => void {
+    let stopProfile: (() => void) | null = null;
+    const stopAuth = onAuthStateChanged(auth, async (user) => {
+      stopProfile?.();
+      stopProfile = null;
+      if (!user) {
+        onProfile(null);
+        return;
       }
+      onPending(true);
+      try {
+        await ensureProfile(user);
+      } catch (err) {
+        console.error('Création du profil impossible', err);
+      }
+      stopProfile = onSnapshot(
+        doc(db, 'users', user.uid),
+        (snap) => onProfile(snap.exists() ? (snap.data() as UserProfile) : null),
+        (err) => {
+          console.error('Lecture du profil impossible', err);
+          onError();
+        },
+      );
     });
-  }
+    return () => {
+      stopProfile?.();
+      stopAuth();
+    };
+  },
 };

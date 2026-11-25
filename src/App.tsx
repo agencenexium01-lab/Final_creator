@@ -1,108 +1,173 @@
-import React, { useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense, useEffect, type ReactNode } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import LandingPage from './pages/LandingPage';
-import SignupPage from './pages/SignupPage';
-import LoginPage from './pages/LoginPage';
-import ForgotPasswordPage from './pages/ForgotPasswordPage';
-import OnboardingPage from './pages/OnboardingPage';
-import DashboardPage from './pages/DashboardPage';
-import ContactPage from './pages/ContactPage';
-import ToolsPage from './pages/ToolsPage';
-import GuidePage from './pages/GuidePage';
-import PricingPage from './pages/PricingPage';
-import { useAppStore } from './stores/appStore';
-import { authService } from './services/authService';
+import { Analytics } from '@vercel/analytics/react';
 import { Loader2 } from 'lucide-react';
+import { useAppStore } from './stores/appStore';
+import LandingPage from './pages/LandingPage';
 
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, user } = useAppStore();
-  
-  // Si l'utilisateur n'est pas authentifié, on bloque l'accès et on renvoie au Login
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
+// Firebase (≈170 Ko compressés) est chargé APRÈS le premier affichage : la page d'accueil n'attend pas.
+const loadAuth = () => import('./services/authService').then((m) => m.authService);
 
-  // Si l'utilisateur est connecté mais n'a pas fait son onboarding, on le force à y aller
-  if (user && !user.onboarding_completed && window.location.pathname !== '/onboarding') {
-    return <Navigate to="/onboarding" replace />;
-  }
+// Pages chargées à la demande : la page d'accueil reste légère.
+const SignupPage = lazy(() => import('./pages/SignupPage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
+const OnboardingPage = lazy(() => import('./pages/OnboardingPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const ToolsPage = lazy(() => import('./pages/ToolsPage'));
+const HistoryPage = lazy(() => import('./pages/HistoryPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const PricingPage = lazy(() => import('./pages/PricingPage'));
+const ContactPage = lazy(() => import('./pages/ContactPage'));
+const GuidePage = lazy(() => import('./pages/GuidePage'));
+const TermsPage = lazy(() => import('./pages/LegalPages').then((m) => ({ default: m.TermsPage })));
+const PrivacyPage = lazy(() => import('./pages/LegalPages').then((m) => ({ default: m.PrivacyPage })));
+const NotFoundPage = lazy(() => import('./pages/LegalPages').then((m) => ({ default: m.NotFoundPage })));
 
-  return <>{children}</>;
+function FullScreenLoader() {
+  return (
+    <div className="grid min-h-dvh place-items-center bg-[#0A0A14]" aria-busy="true">
+      <Loader2 className="h-6 w-6 animate-spin text-[#94A3B8]" aria-label="Chargement" />
+    </div>
+  );
+}
+
+/** Remonte en haut à chaque page, ou défile jusqu'à l'ancre (#apercu). */
+function ScrollManager() {
+  const { pathname, hash } = useLocation();
+  useEffect(() => {
+    if (hash) {
+      const el = document.getElementById(hash.slice(1));
+      if (el) {
+        el.scrollIntoView();
+        return;
+      }
+    }
+    window.scrollTo(0, 0);
+  }, [pathname, hash]);
+  return null;
+}
+
+/** Titres d'onglet par page (référencement et historique du navigateur). */
+const TITLES: Record<string, string> = {
+  '/': 'Creator Booster IA · Ton mois de contenu TikTok et Facebook en une minute',
+  '/pricing': 'Tarifs · Creator Booster IA',
+  '/guide': 'Guide du créateur · Creator Booster IA',
+  '/contact': 'Aide et contact · Creator Booster IA',
+  '/conditions': 'Conditions générales · Creator Booster IA',
+  '/confidentialite': 'Confidentialité · Creator Booster IA',
+  '/login': 'Connexion · Creator Booster IA',
+  '/signup': 'Créer un compte · Creator Booster IA',
 };
+function TitleManager() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    document.title = TITLES[pathname] ?? 'Creator Booster IA';
+  }, [pathname]);
+  return null;
+}
+
+function ProfileError() {
+  return (
+    <div className="grid min-h-dvh place-items-center bg-[#0A0A14] px-4 text-center text-white">
+      <div>
+        <h1 className="text-xl font-medium">Impossible de charger ton compte</h1>
+        <p className="mt-2 text-[#94A3B8]">Vérifie ta connexion Internet, puis réessaie.</p>
+        <div className="mt-6 flex justify-center gap-3">
+          <button type="button" onClick={() => window.location.reload()} className="min-h-11 rounded-xl bg-white px-5 font-medium text-[#0A0A14]">Réessayer</button>
+          <button type="button" onClick={() => loadAuth().then((a) => a.logout())} className="min-h-11 rounded-xl border border-[#2D2D5E] px-5 text-white">Se déconnecter</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RequireAuth({ children, allowIncomplete = false }: { children: ReactNode; allowIncomplete?: boolean }) {
+  const { status, user, profileError, profilePending } = useAppStore();
+  const location = useLocation();
+  if (profileError && !user) return <ProfileError />;
+  // Connecté côté Firebase mais profil pas encore reçu : on attend au lieu de renvoyer vers la connexion.
+  if (status === 'loading' || profilePending) return <FullScreenLoader />;
+  if (status === 'signedOut' || !user) {
+    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  }
+  if (!allowIncomplete && !user.onboarding_completed) {
+    return <Navigate to={`/onboarding?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  }
+  if (allowIncomplete && user.onboarding_completed && location.pathname === '/onboarding') {
+    const next = new URLSearchParams(location.search).get('next');
+    return <Navigate to={next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard'} replace />;
+  }
+  return <>{children}</>;
+}
+
+/** Pages de connexion : un utilisateur déjà connecté va directement à son espace. */
+function GuestOnly({ children }: { children: ReactNode }) {
+  const status = useAppStore((s) => s.status);
+  const location = useLocation();
+  if (status === 'signedIn') {
+    const next = new URLSearchParams(location.search).get('next');
+    return <Navigate to={next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard'} replace />;
+  }
+  return <>{children}</>;
+}
 
 export default function App() {
-  const { setUser, clearUser } = useAppStore();
-  const [isInitializing, setIsInitializing] = useState(true);
+  const setUser = useAppStore((s) => s.setUser);
+  const setProfileError = useAppStore((s) => s.setProfileError);
+  const setProfilePending = useAppStore((s) => s.setProfilePending);
 
   useEffect(() => {
-    const unsubscribe = authService.onAuthChange((user) => {
-      if (user) {
-        setUser(user);
-      } else {
-        clearUser();
-      }
-      setIsInitializing(false);
-    });
-
-    return () => unsubscribe();
-  }, [setUser, clearUser]);
-
-  if (isInitializing) {
-    return (
-      <div className="min-h-screen bg-[#0A0A14] flex items-center justify-center">
-        <Loader2 className="w-10 h-10 text-[#7C3AED] animate-spin" />
-      </div>
-    );
-  }
+    let stop: (() => void) | undefined;
+    let cancelled = false;
+    loadAuth()
+      .then((authService) => {
+        if (!cancelled) stop = authService.watchSession(setUser, () => setProfileError(true), setProfilePending);
+      })
+      .catch((err) => {
+        // Firebase indisponible (configuration absente, réseau) : les pages publiques restent utilisables.
+        console.error(err);
+        if (!cancelled) setUser(null);
+      });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [setUser, setProfileError, setProfilePending]);
 
   return (
-    <Router>
-      <div className="min-h-screen bg-[#0A0A14] text-[#F1F5F9] font-sans selection:bg-[#7C3AED]/30">
+    <BrowserRouter>
+      <ScrollManager />
+      <TitleManager />
+      <Suspense fallback={<FullScreenLoader />}>
         <Routes>
-          {/* ================= ROUTES PUBLIQUES ================= */}
           <Route path="/" element={<LandingPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          
-          {/* Les tarifs et le support sont désormais accessibles sans connexion */}
-          <Route path="/recharge-credits" element={<Navigate to="/pricing" replace />} />
           <Route path="/pricing" element={<PricingPage />} />
-          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/recharge-credits" element={<Navigate to="/pricing" replace />} />
           <Route path="/guide" element={<GuidePage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/conditions" element={<TermsPage />} />
+          <Route path="/confidentialite" element={<PrivacyPage />} />
 
-          {/* ================= ROUTES PROTÉGÉES ================= */}
-          <Route path="/onboarding" element={
-            <ProtectedRoute>
-              <OnboardingPage />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <DashboardPage />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/tools/:toolId" element={
-            <ProtectedRoute>
-              <ToolsPage />
-            </ProtectedRoute>
-          } />
-          
-          {/* Redirection globale pour les URLs inconnues */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="/signup" element={<GuestOnly><SignupPage /></GuestOnly>} />
+          <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+
+          <Route path="/onboarding" element={<RequireAuth allowIncomplete><OnboardingPage /></RequireAuth>} />
+          <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+          <Route path="/tools/:toolId" element={<RequireAuth><ToolsPage /></RequireAuth>} />
+          <Route path="/history" element={<RequireAuth><HistoryPage /></RequireAuth>} />
+          <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
+
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
-
-        <Toaster position="top-right" toastOptions={{
-          style: {
-            background: '#12121F',
-            color: '#F1F5F9',
-            border: '1px solid #1E1E3A',
-          },
-        }} />
-      </div>
-    </Router>
+      </Suspense>
+      <Toaster
+        position="top-center"
+        toastOptions={{ duration: 4000, style: { background: '#12121F', color: '#F1F5F9', border: '1px solid #1E1E3A' } }}
+      />
+      <Analytics />
+    </BrowserRouter>
   );
 }

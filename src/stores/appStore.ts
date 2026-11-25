@@ -1,36 +1,30 @@
-
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { UserProfile, Platform } from '../types';
+import type { UserProfile } from '../types';
+
+type AuthStatus = 'loading' | 'signedOut' | 'signedIn';
 
 interface AppState {
+  status: AuthStatus;
   user: UserProfile | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
+  /** Connecté à Firebase mais profil illisible (réseau, règles) : affiché au lieu d'un chargement sans fin. */
+  profileError: boolean;
+  /** Session Firebase ouverte, profil pas encore reçu : les pages protégées attendent au lieu de rediriger. */
+  profilePending: boolean;
+  setProfilePending: (value: boolean) => void;
   setUser: (user: UserProfile | null) => void;
-  setAuthenticated: (status: boolean) => void;
-  setLoading: (status: boolean) => void;
-  updateProfile: (updates: Partial<UserProfile>) => void;
-  clearUser: () => void;
+  setProfileError: (value: boolean) => void;
+  patchUser: (updates: Partial<UserProfile>) => void;
 }
 
-export const useAppStore = create<AppState>()(
-  persist(
-    (set) => ({
-      user: null,
-      isAuthenticated: false,
-      isLoading: false,
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
-      setAuthenticated: (status) => set({ isAuthenticated: status }),
-      setLoading: (status) => set({ isLoading: status }),
-      updateProfile: (updates) =>
-        set((state) => ({
-          user: state.user ? { ...state.user, ...updates } : null,
-        })),
-      clearUser: () => set({ user: null, isAuthenticated: false }),
-    }),
-    {
-      name: 'creator-booster-storage',
-    }
-  )
-);
+// Pas de persistance locale : le profil (et donc le solde) vient toujours de Firestore,
+// en temps réel. Un solde affiché ne peut pas être périmé.
+export const useAppStore = create<AppState>()((set) => ({
+  status: 'loading',
+  user: null,
+  profileError: false,
+  profilePending: false,
+  setProfilePending: (profilePending) => set({ profilePending }),
+  setUser: (user) => set({ user, status: user ? 'signedIn' : 'signedOut', profileError: false, profilePending: false }),
+  setProfileError: (profileError) => set({ profileError }),
+  patchUser: (updates) => set((s) => ({ user: s.user ? { ...s.user, ...updates } : null })),
+}));
