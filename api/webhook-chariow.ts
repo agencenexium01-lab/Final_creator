@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from './_lib/vercel.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from './_lib/firebaseAdmin.js';
 import { readSale, verifyPulseSignature } from './_lib/pulse.js';

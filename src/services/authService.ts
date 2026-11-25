@@ -88,7 +88,7 @@ export const authService = {
    * Suit la session ET le profil en temps réel (le solde se met à jour seul après un paiement).
    * Retourne une fonction de désinscription.
    */
-  watchSession(onProfile: (profile: UserProfile | null) => void, onError: () => void): () => void {
+  watchSession(onProfile: (profile: UserProfile | null) => void, onError: () => void, onPending: (pending: boolean) => void): () => void {
     let stopProfile: (() => void) | null = null;
     const stopAuth = onAuthStateChanged(auth, async (user) => {
       stopProfile?.();
@@ -97,6 +97,7 @@ export const authService = {
         onProfile(null);
         return;
       }
+      onPending(true);
       try {
         await ensureProfile(user);
       } catch (err) {

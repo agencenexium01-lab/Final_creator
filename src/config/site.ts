@@ -11,12 +11,15 @@ export const SITE = {
 } as const;
 
 /**
- * Vidéos de démonstration (format « embed » : YouTube https://www.youtube-nocookie.com/embed/<id>,
- * ou Google Drive https://drive.google.com/file/d/<id>/preview).
- * Une valeur vide affiche un emplacement réservé « Démo vidéo bientôt disponible ».
+ * Vidéos de démonstration. Coller directement le lien de partage :
+ * - Google Drive (le fichier doit être partagé « Tous les utilisateurs disposant du lien ») ;
+ * - YouTube (vidéo publique ou « non répertoriée ») ;
+ * - ou un fichier .mp4 placé dans public/videos/ (ex. '/videos/demo.mp4') : la solution la plus pro,
+ *   lecteur 100 % intégré au site, sans logo ni lien vers un autre service.
+ * Une valeur vide affiche un emplacement « Démo vidéo bientôt disponible ».
  */
 export const DEMO_VIDEOS = {
-  hero: 'https://drive.google.com/file/d/1lePbr0Ju-_ArgTpUWmHNS-jtHs6wevy2/preview',
+  hero: 'https://drive.google.com/file/d/1k145PtobmiCMZjWqmYdg5wjQgdagrduK/view?usp=drivesdk',
   calendar: '',
   script: '',
   hooks: '',

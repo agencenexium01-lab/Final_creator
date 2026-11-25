@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from './vercel.js';
 import { adminAuth } from './firebaseAdmin.js';
 
 export class HttpError extends Error {

@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from './_lib/vercel.js';
 import { HttpError, allowMethods, appUrl, requireUser, sendError } from './_lib/http.js';
 import { getPack } from '../src/shared/pricing.js';
 import { normalizePhone } from '../src/shared/phone.js';

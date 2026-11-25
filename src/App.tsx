@@ -4,9 +4,10 @@ import { Toaster } from 'react-hot-toast';
 import { Analytics } from '@vercel/analytics/react';
 import { Loader2 } from 'lucide-react';
 import { useAppStore } from './stores/appStore';
-import { authService } from './services/authService';
-import { auth } from './services/firebase';
 import LandingPage from './pages/LandingPage';
+
+// Firebase (≈170 Ko compressés) est chargé APRÈS le premier affichage : la page d'accueil n'attend pas.
+const loadAuth = () => import('./services/authService').then((m) => m.authService);
 
 // Pages chargées à la demande : la page d'accueil reste légère.
 const SignupPage = lazy(() => import('./pages/SignupPage'));
@@ -75,7 +76,7 @@ function ProfileError() {
         <p className="mt-2 text-[#94A3B8]">Vérifie ta connexion Internet, puis réessaie.</p>
         <div className="mt-6 flex justify-center gap-3">
           <button type="button" onClick={() => window.location.reload()} className="min-h-11 rounded-xl bg-white px-5 font-medium text-[#0A0A14]">Réessayer</button>
-          <button type="button" onClick={() => authService.logout()} className="min-h-11 rounded-xl border border-[#2D2D5E] px-5 text-white">Se déconnecter</button>
+          <button type="button" onClick={() => loadAuth().then((a) => a.logout())} className="min-h-11 rounded-xl border border-[#2D2D5E] px-5 text-white">Se déconnecter</button>
         </div>
       </div>
     </div>
@@ -83,11 +84,11 @@ function ProfileError() {
 }
 
 function RequireAuth({ children, allowIncomplete = false }: { children: ReactNode; allowIncomplete?: boolean }) {
-  const { status, user, profileError } = useAppStore();
+  const { status, user, profileError, profilePending } = useAppStore();
   const location = useLocation();
   if (profileError && !user) return <ProfileError />;
   // Connecté côté Firebase mais profil pas encore reçu : on attend au lieu de renvoyer vers la connexion.
-  if (status === 'loading' || (status === 'signedOut' && auth.currentUser)) return <FullScreenLoader />;
+  if (status === 'loading' || profilePending) return <FullScreenLoader />;
   if (status === 'signedOut' || !user) {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
@@ -115,8 +116,25 @@ function GuestOnly({ children }: { children: ReactNode }) {
 export default function App() {
   const setUser = useAppStore((s) => s.setUser);
   const setProfileError = useAppStore((s) => s.setProfileError);
+  const setProfilePending = useAppStore((s) => s.setProfilePending);
 
-  useEffect(() => authService.watchSession(setUser, () => setProfileError(true)), [setUser, setProfileError]);
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    let cancelled = false;
+    loadAuth()
+      .then((authService) => {
+        if (!cancelled) stop = authService.watchSession(setUser, () => setProfileError(true), setProfilePending);
+      })
+      .catch((err) => {
+        // Firebase indisponible (configuration absente, réseau) : les pages publiques restent utilisables.
+        console.error(err);
+        if (!cancelled) setUser(null);
+      });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [setUser, setProfileError, setProfilePending]);
 
   return (
     <BrowserRouter>

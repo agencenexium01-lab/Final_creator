@@ -13,6 +13,8 @@ export default defineConfig({
   },
   build: {
     target: 'es2020',
+    // Le paquet Firebase dépasse 500 Ko mais il est chargé après l'affichage et mis en cache longtemps.
+    chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
         // Bibliothèques lourdes séparées : mises en cache entre deux déploiements.

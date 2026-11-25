@@ -10,7 +10,7 @@ Site : https://creator-booster.vercel.app · Éditeur : NexiumAgency
 | --- | --- |
 | Interface | React 19, Vite 6, Tailwind CSS 4, React Router 7, Zustand |
 | Comptes et données | Firebase Auth + Cloud Firestore |
-| Serveur | Fonctions Vercel (Node 22) dans `api/` |
+| Serveur | Fonctions Vercel (Node 20 ou 22) dans `api/` |
 | IA | Gemini 2.5 Flash (réponses JSON contraintes par schéma) |
 | Paiement | Chariow (checkout + webhook « Pulse » signé) |
 
