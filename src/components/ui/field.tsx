@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { SelectMenu } from './select-menu';
 
 interface FieldProps {
   id: string;
@@ -41,9 +42,36 @@ export function Field({ id, label, hint, error, optional, className, children }:
 export const inputClass =
   'w-full min-h-11 rounded-lg border border-[#2D2D5E] bg-[#1A1A2E] px-3 py-2 text-base text-white placeholder:text-[#64748B] transition-colors focus-visible:border-[#7C3AED] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]/40 aria-[invalid=true]:border-red-400 disabled:opacity-50';
 
-export function NativeSelect({ className, children, ...props }: React.ComponentProps<'select'>) {
+/** Écran tactile (téléphone, tablette) : le sélecteur natif du système y est lisible et pratique. */
+const prefersNativeSelect = () => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+
+/**
+ * Liste déroulante. Sur ordinateur, menu dessiné par le site (sous Windows, le menu natif
+ * ignore les couleurs du site et devenait illisible). Sur écran tactile, sélecteur natif.
+ */
+export function NativeSelect({ className, children, value, onChange, id, disabled, ...props }: React.ComponentProps<'select'>) {
+  if (!prefersNativeSelect()) {
+    return (
+      <SelectMenu
+        id={id}
+        value={String(value ?? '')}
+        disabled={disabled}
+        className={className}
+        aria-describedby={props['aria-describedby']}
+        aria-invalid={props['aria-invalid'] === true || props['aria-invalid'] === 'true'}
+        onChange={(e) => onChange?.(e as unknown as React.ChangeEvent<HTMLSelectElement>)}
+      >
+        {children}
+      </SelectMenu>
+    );
+  }
   return (
-    <select className={cn(inputClass, 'appearance-none bg-[length:16px] bg-[right_12px_center] bg-no-repeat pr-10', className)}
+    <select
+      id={id}
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      className={cn(inputClass, 'appearance-none bg-[length:16px] bg-[right_12px_center] bg-no-repeat pr-10', className)}
       style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")" }}
       {...props}
     >
