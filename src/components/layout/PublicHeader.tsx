@@ -4,6 +4,7 @@ import { Menu, X } from 'lucide-react';
 import { Logo } from '@/components/brand/Logo';
 import { useAppStore } from '@/stores/appStore';
 import { cn } from '@/lib/utils';
+import { InstallButton, ShareButton } from '@/components/ShareInstall';
 
 const LINKS = [
   { to: '/#apercu', label: 'Aperçu' },
@@ -32,6 +33,7 @@ export function PublicHeader() {
   }, [open]);
 
   return (
+    <>
     <header className="sticky top-0 z-40 border-b border-[#1E1E3A] bg-[#0A0A14]/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
         <Logo />
@@ -75,10 +77,13 @@ export function PublicHeader() {
         </button>
       </div>
 
+    </header>
+
+      {/* Hors de l'en-tête : son backdrop-blur ferait du header la référence de ce panneau « fixed » (bug de superposition). */}
       <div
         id="menu-mobile"
         className={cn(
-          'fixed inset-x-0 top-16 bottom-0 z-40 bg-[#0A0A14] px-4 pb-8 pt-4 md:hidden',
+          'fixed inset-x-0 top-16 bottom-0 z-40 overflow-y-auto bg-[#0A0A14] px-4 pb-8 pt-4 md:hidden',
           open ? 'block' : 'hidden',
         )}
       >
@@ -105,7 +110,11 @@ export function PublicHeader() {
             </>
           )}
         </div>
+        <div className="mt-8 grid gap-3 border-t border-[#1E1E3A] pt-6">
+          <InstallButton className="w-full" />
+          <ShareButton className="w-full" />
+        </div>
       </div>
-    </header>
+    </>
   );
 }

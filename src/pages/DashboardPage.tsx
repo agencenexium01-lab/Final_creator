@@ -10,6 +10,7 @@ import { useAppStore } from '@/stores/appStore';
 import type { Generation } from '@/types';
 import { SITE } from '@/config/site';
 import { HistoryList } from './HistoryPage';
+import { InstallBanner } from '@/components/ShareInstall';
 
 type PaymentState = 'idle' | 'waiting' | 'confirmed' | 'late';
 
@@ -71,6 +72,8 @@ export default function DashboardPage() {
             <Link to="/settings" className="underline underline-offset-4 hover:text-white">modifier</Link>
           </p>
         </header>
+
+        <InstallBanner />
 
         {payment !== 'idle' && (
           <div

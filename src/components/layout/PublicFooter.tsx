@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Logo } from '@/components/brand/Logo';
 import { SITE } from '@/config/site';
+import { InstallButton, ShareButton } from '@/components/ShareInstall';
 
 export function PublicFooter() {
   const year = new Date().getFullYear();
@@ -13,6 +14,10 @@ export function PublicFooter() {
             Le planning et les scripts de tes contenus TikTok et Facebook, écrits pour l’Afrique francophone.
             Un produit {SITE.publisher}.
           </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <InstallButton />
+            <ShareButton />
+          </div>
         </div>
         <nav aria-label="Produit">
           <h2 className="mb-3 text-sm font-medium text-white">Produit</h2>

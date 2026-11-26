@@ -1,5 +1,5 @@
-import { useId, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useId, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, RotateCcw, ShieldCheck, Infinity as InfinityIcon, MessageCircle } from 'lucide-react';
 import { PublicHeader } from '@/components/layout/PublicHeader';
 import { PublicFooter } from '@/components/layout/PublicFooter';
@@ -13,6 +13,7 @@ import { FAQ } from '@/content/faq';
 import { SAMPLE_CALENDAR, SAMPLE_HOOKS, SAMPLE_IDEAS, SAMPLE_PERSONA, SAMPLE_SCRIPT } from '@/content/samples';
 import { useAppStore } from '@/stores/appStore';
 import { cn } from '@/lib/utils';
+import { isStandalone } from '@/lib/pwa';
 
 const SAMPLES = {
   calendar: { days: SAMPLE_CALENDAR },
@@ -107,6 +108,14 @@ function ToolPreview() {
 }
 
 export default function LandingPage() {
+  const status = useAppStore((s) => s.status);
+  const navigate = useNavigate();
+
+  // Ouverte depuis l'icône de l'écran d'accueil par un membre connecté : directement dans son espace.
+  useEffect(() => {
+    if (status === 'signedIn' && isStandalone()) navigate('/dashboard', { replace: true });
+  }, [status, navigate]);
+
   return (
     <div className="min-h-dvh bg-[#0A0A14] text-white">
       <PublicHeader />

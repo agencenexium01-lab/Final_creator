@@ -9,6 +9,7 @@ import { NICHE_OPTIONS, PLATFORM_OPTIONS, type Platform } from '@/config/ui';
 import { COUNTRIES } from '@/shared/phone.js';
 import { authService } from '@/services/authService';
 import { useAppStore } from '@/stores/appStore';
+import { ShareInstallPanel } from '@/components/ShareInstall';
 
 export default function SettingsPage() {
   const user = useAppStore((s) => s.user)!;
@@ -87,6 +88,12 @@ export default function SettingsPage() {
             Enregistrer
           </button>
         </form>
+
+        <section aria-labelledby="app-partage" className="mt-6 rounded-2xl border border-[#1E1E3A] p-6">
+          <h2 id="app-partage" className="font-medium text-white">Application et partage</h2>
+          <p className="mt-1 text-sm text-[#94A3B8]">Ajoute Creator Booster à ton écran d’accueil, ou envoie le site à un autre créateur.</p>
+          <ShareInstallPanel className="mt-4" />
+        </section>
 
         <nav aria-label="Liens utiles" className="mt-6 divide-y divide-[#1E1E3A] overflow-hidden rounded-2xl border border-[#1E1E3A]">
           {[
